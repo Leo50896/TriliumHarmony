@@ -19,8 +19,8 @@ export struct LoginView {
   onAuthenticated: () => void = () => {};
 
   @State private password: string = '';
-  @State private serverUrl: string = MockConfig.DEFAULT_SERVER_URL;
-  @State private activeServer: string = MockConfig.DEFAULT_SERVER_URL;
+  @State private serverUrl: string = '';
+  @State private activeServer: string = '';
   @State private challengeId: string = '';
   @State private otpCode: string = '';
   @State private isLoading: boolean = false;
@@ -118,8 +118,12 @@ export struct LoginView {
     this.errorMessage = '';
     this.infoMessage = '';
 
-    const effectiveServer: string = this.serverUrl.trim().length > 0
-      ? this.serverUrl.trim() : MockConfig.DEFAULT_SERVER_URL;
+    const effectiveServer: string = this.serverUrl.trim();
+    if (effectiveServer.length === 0) {
+      this.dismissKeyboard();
+      this.errorMessage = '请输入服务器地址';
+      return;
+    }
     if (this.password.length === 0) {
       this.dismissKeyboard();
       this.errorMessage = '请输入密码';
@@ -330,7 +334,7 @@ export struct LoginView {
         })
         AuthTextField({
           value: $serverUrl,
-          placeholder: MockConfig.DEFAULT_SERVER_URL,
+          placeholder: MockConfig.SERVER_URL_PLACEHOLDER,
           icon: $r('app.media.ic_server'),
           inputType: InputType.Normal,
           onSubmitted: () => {

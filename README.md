@@ -223,7 +223,8 @@ entry/build/default/outputs/default/entry-default-unsigned.hap
 ```ts
 // entry/src/main/ets/constants/MockConfig.ets
 static readonly USE_MOCK: boolean = false;
-static readonly DEFAULT_SERVER_URL: string = 'https://notes.xinlin93.top';
+static readonly DEFAULT_SERVER_URL: string = '';
+static readonly SERVER_URL_PLACEHOLDER: string = 'https://trilium.example.com';
 ```
 
 真实模式不写死密码，登录页只需输入：
@@ -231,7 +232,7 @@ static readonly DEFAULT_SERVER_URL: string = 'https://notes.xinlin93.top';
 | 字段 | 说明 |
 | --- | --- |
 | 密码 | 服务器密码；Trilium 单用户登录只校验密码 |
-| 服务器 | 默认已填 `https://notes.xinlin93.top`，可改 |
+| 服务器 | 默认留空，需填写自己的 Trilium 地址 |
 | 动态验证码 | 仅当服务端要求 2FA 时，通过底部弹窗输入 6 位 TOTP |
 
 真实登录顺序：
@@ -325,7 +326,8 @@ Mock 模式仍保留原来的 `challengeId` + 60 秒重发流程；真实模式�
 ```ts
 // entry/src/main/ets/constants/MockConfig.ets
 static readonly USE_MOCK: boolean = false;
-static readonly DEFAULT_SERVER_URL: string = 'https://notes.xinlin93.top';
+static readonly DEFAULT_SERVER_URL: string = '';
+static readonly SERVER_URL_PLACEHOLDER: string = 'https://trilium.example.com';
 ```
 
 `AuthService` 使用 `@ohos.net.http`，自动去掉服务器 URL 末尾的 `/`。
