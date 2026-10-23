@@ -820,7 +820,7 @@ $HDC = "D:\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
 # 4. 安装并启动 unsigned HAP
 & $HDC -t 127.0.0.1:5557 install -r `
   "entry\build\default\outputs\default\entry-default-unsigned.hap"
-& $HDC -t 127.0.0.1:5557 shell "aa start -a EntryAbility -b com.trilium.harmony"
+& $HDC -t 127.0.0.1:5557 shell "aa start -a EntryAbility -b com.leo50896.triliumnotes"
 ```
 
 截图：

@@ -82,7 +82,7 @@ fs.closeSync(file)
 - 图片请求成功后，沙箱出现：
 
 ```text
-/data/app/el2/100/base/com.trilium.harmony/haps/entry/cache/images/
+/data/app/el2/100/base/com.leo50896.triliumnotes/haps/entry/cache/images/
   0e0d85590ad75fc737c2ab5babf26dc8.img
 ```
 
