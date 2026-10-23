@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "Trilium Notes client for HarmonyOS"
+      "value": "Trilium 笔记 HarmonyOS 客户端"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "Trilium main ability"
+      "value": "Trilium 笔记主界面"
     },
     {
       "name": "EntryAbility_label",
-      "value": "Trilium"
+      "value": "Trilium 笔记"
     },
     {
       "name": "internet_reason",

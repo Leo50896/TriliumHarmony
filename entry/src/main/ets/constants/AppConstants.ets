@@ -1,6 +1,6 @@
 export class AppConstants {
   static readonly APP_VERSION: string = 'v1.0.0';
-  static readonly APP_NAME: string = 'Trilium';
+  static readonly APP_NAME: string = 'Trilium 笔记';
   static readonly PREF_STORE_NAME: string = 'trilium_auth';
   static readonly PREF_THEME_STORE_NAME: string = 'trilium_theme';
   static readonly KEY_THEME_MODE: string = 'theme_mode';
