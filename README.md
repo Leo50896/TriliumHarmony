@@ -31,7 +31,7 @@
 
 | 设计稿 | 实现位置 | 关键点 |
 | --- | --- | --- |
-| 1. 登录页 | `views/LoginView.ets` | 品牌区、3 个输入框、密码显隐、Loading、错误条、Mock 提示 |
+| 1. 登录页 | `views/LoginView.ets` | 品牌区、密码 + 服务器输入、密码显隐、Loading、错误条；服务端要求时才弹出 2FA |
 | 2.1 主阅读/编辑页 | `views/EditorView.ets` + `utils/HtmlContentParser.ets` | 真实正文、Callout、行内样式、图片预览缩放、表格卡片、轻编辑 |
 | 2.2 设置页 | `views/SettingsView.ets` | HarmonyOS 风格分组卡片、图标色块、开关、滑杆、退出登录 |
 | 2. 侧边抽屉 | `components/SideDrawer.ets` + `services/EtapiService.ets` | ETAPI 真实目录、懒加载展开/折叠、下拉刷新、搜索、同步状态 |
@@ -87,7 +87,7 @@ TriliumHarmony/
 │       │   ├── pages/
 │       │   │   └── Index.ets                 # 启动页 + Token 门禁
 │       │   ├── views/
-│       │   │   ├── LoginView.ets             # 账号密码 + 2FA 两步登录
+│       │   │   ├── LoginView.ets             # 密码 + 条件式 2FA 弹窗登录
 │       │   │   ├── MainView.ets              # 登录后壳层，SideBarContainer
 │       │   │   ├── EditorView.ets            # 阅读/编辑页
 │       │   │   └── SettingsView.ets          # 设置页
@@ -226,24 +226,24 @@ static readonly USE_MOCK: boolean = false;
 static readonly DEFAULT_SERVER_URL: string = 'https://notes.xinlin93.top';
 ```
 
-真实模式不写死账号密码，登录页输入：
+真实模式不写死密码，登录页只需输入：
 
 | 字段 | 说明 |
 | --- | --- |
-| 用户名 | 仅用于客户端展示和本地 Session；Trilium 单用户登录只校验密码 |
-| 密码 | 服务器密码 |
+| 密码 | 服务器密码；Trilium 单用户登录只校验密码 |
 | 服务器 | 默认已填 `https://notes.xinlin93.top`，可改 |
-| 动态验证码 | 服务器 `/bootstrap` 返回 `login.totpEnabled=true` 时，在第二步手动输入 6 位 TOTP |
+| 动态验证码 | 仅当服务端要求 2FA 时，通过底部弹窗输入 6 位 TOTP |
 
 真实登录顺序：
 
-1. `GET /bootstrap` 读取 `login.totpEnabled`；
-2. 2FA 未开启：`POST /api/login/token`，只提交密码；
-3. 2FA 已开启：进入验证码页，输入满 6 位后自动提交 `password + totpToken`；
+1. `POST /api/login/token`，只提交密码；
+2. 服务端返回 `factor: "totp"`，或兼容旧版时 `/bootstrap` 显示 `login.totpEnabled=true`，才弹出 2FA；
+3. 弹窗内输入满 6 位后提交 `password + totpToken`；
 4. 服务端返回 ETAPI `token`，写入 preferences；
 5. 冷启动时 Token 在本地有效期内则跳过登录页。
 
-> 真实 TOTP 不存在“重新发送”概念，验证码页只显示“由身份验证器生成，每 30 秒更新”。
+> 登录不再要求用户名，也不再发送 username 字段。
+> 真实 TOTP 不存在“重新发送”概念，弹窗只显示“由身份验证器生成，每 30 秒更新”。
 > 60 秒重发倒计时仅在 Mock 模式出现。
 
 ### 4.2 Mock 模式
@@ -252,7 +252,6 @@ static readonly DEFAULT_SERVER_URL: string = 'https://notes.xinlin93.top';
 
 | 步骤 | 输入 |
 | --- | --- |
-| 用户名 | 任意至少 2 位，例如 `trilium` |
 | 密码 | 任意至少 6 位，例如 `trilium123` |
 | 动态验证码 | `123456` |
 
@@ -260,12 +259,12 @@ Mock 错误分支：
 
 | 场景 | 输入 / 操作 | 结果 |
 | --- | --- | --- |
-| 密码错误 | 密码 `wrong-password` | `账号或密码错误，请检查后重试` |
-| 网络错误 | 用户名 `network-error` | 网络/服务器地址错误提示 |
+| 密码错误 | 密码 `wrong-password` | `密码错误，请检查后重试` |
+| 网络错误 | 密码 `network-error` | 网络/服务器地址错误提示 |
 | 验证码错误 | `654321` | `验证码错误，请核对后重试` |
 | 验证码过期 | `000000` | `验证码已过期，请重新获取` |
 | 重发倒计时 | 登录后等待 60 秒 | 倒计时结束才可点「重新发送验证码」 |
-| 返回上一步 | 验证码页「返回」/「返回上一步」 | 回到账号密码页，清空 challenge 与计时器 |
+| 返回上一步 | 验证码弹窗「返回上一步」 | 关闭弹窗，清空 challenge 与计时器 |
 
 > 登录页的 Mock 提示只在 `USE_MOCK === true` 时显示。
 
@@ -283,32 +282,29 @@ index phase 0 (restore token)
       └── no token / expired
               │
               ▼
-       loginStep === 1
-       username + password + server
+       密码 + 服务器
               │
-              ├── GET /bootstrap → login.totpEnabled === false
-              │        └── POST /api/login/token {password}
-              │                 └── token → MainView
+              ├── POST /api/login/token {password}
+              │        ├── 2FA 未开启：token → MainView
+              │        └── 2FA 要求：弹出验证码 Sheet
+              │                 │
+              │                 ▼
+              │          6 位 TOTP，自动校验
+              │                 │
+              │                 ▼
+              │          POST /api/login/token {password, totpToken}
+              │                 ├── 失败：提示，清空验证码
+              │                 └── 成功：TokenStore.saveSession() → MainView
               │
-              └── login.totpEnabled === true
-                       │
-                       ▼
-                loginStep === 2
-                6 位 TOTP，自动校验
-                       │
-                       ▼
-                POST /api/login/token {password, totpToken}
-                       │
-                       ├── 失败：错误提示，清空验证码
-                       └── 成功：TokenStore.saveSession() → MainView
+              └── 兼容旧版 401：GET /bootstrap 确认 totpEnabled 后才弹窗
 ```
 
 Mock 模式仍保留原来的 `challengeId` + 60 秒重发流程；真实模式不需要 challenge，也没有“重发”接口。
 
 ### 登录页细节
 
-- `loginStep === 1`：账号、密码、服务器三个 `AuthTextField`，支持键盘 Next 提交与密码显隐。
-- `loginStep === 2`：
+- 登录页只有 **密码**、**服务器** 两个 `AuthTextField`，支持键盘提交与密码显隐。
+- 2FA 是 `bindSheet` 底部弹窗，只有服务端要求时才出现：
   - `OtpInput` 内部是 1 个透明 `TextInput`，上层渲染 6 个格子；
   - `maxLength(6)`、`InputType.Number`、`defaultFocus(true)`；
   - 输入到 6 位时 `onComplete()` 自动调用校验；
@@ -406,7 +402,7 @@ Token 的有效性由服务端控制；本地 `AuthSession.expiresAt` 只是 30 
 
 ### 6.3 生产环境注意事项
 
-1. **不要把密码或 TOTP 写进源码**。本工程只把服务器 URL 作为默认值，账号密码完全由登录页输入。
+1. **不要把密码或 TOTP 写进源码**。本工程只把服务器 URL 作为默认值，密码完全由登录页输入。
 2. **TOTP Secret 永远不下发客户端**，客户端只提交 6 位动态码；服务端负责校验。
 3. **Token 存储**：示例按需求使用 `@ohos.data.preferences`；正式产品应把 ETAPI Token 放进 HUKS / 安全存储。
 4. **HTTPS**：当前服务器使用 HTTPS，`INTERNET` 权限已在 `module.json5` 声明。
@@ -849,7 +845,7 @@ $HDC = "D:\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
 
 ### 9.3 已验证路径
 
-- Mock 账号密码登录 → 自动进入 6 位动态码页；
+- Mock 密码登录 → 服务端要求 2FA 时弹出 6 位动态码弹窗；
 - Mock OTP 错误码 `654321` → 显示“验证码错误”，自动收起键盘并清空校验码；
 - Mock 正确 OTP `123456` → 保存 Token → 进入主阅读页；
 - 侧边抽屉打开、遮罩、笔记树、设置入口；

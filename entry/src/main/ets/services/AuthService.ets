@@ -49,9 +49,9 @@ export class AuthService {
     }
 
     const baseUrl: string = AuthService.normalizeBaseUrl(payload.serverUrl);
-    AuthService.activeUsername = payload.username;
+    AuthService.activeUsername = 'trilium';
     AuthService.activeServerUrl = baseUrl;
-    return AuthService.requestToken(baseUrl, payload.password, '', payload.username);
+    return AuthService.requestToken(baseUrl, payload.password, '');
   }
 
   /**
@@ -98,15 +98,15 @@ export class AuthService {
     }
 
     const baseUrl: string = AuthService.normalizeBaseUrl(baseUrlValue);
-    return AuthService.requestToken(baseUrl, password, code, AuthService.activeUsername);
+    return AuthService.requestToken(baseUrl, password, code);
   }
 
   /**
-   * Keeps the display name used by the stored session when the password step
-   * is completed without calling /api/login/token (the 2FA branch).
+   * Resets the active server when the password step has completed without a
+   * token request (the TOTP branch).
    */
-  static setActiveIdentity(username: string, serverUrl: string): void {
-    AuthService.activeUsername = username;
+  static setActiveIdentity(serverUrl: string): void {
+    AuthService.activeUsername = 'trilium';
     AuthService.activeServerUrl = AuthService.normalizeBaseUrl(serverUrl);
   }
 
@@ -121,8 +121,8 @@ export class AuthService {
     );
   }
 
-  private static async requestToken(baseUrl: string, password: string, totpToken: string,
-    username: string): Promise<AuthResult> {
+  private static async requestToken(baseUrl: string, password: string,
+    totpToken: string): Promise<AuthResult> {
     const request: http.HttpRequest = http.createHttp();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ export class AuthService {
           token,
           '',
           Date.now() + REAL_TOKEN_TTL_MS,
-          username,
+          'trilium',
           baseUrl
         );
         return AuthResult.signedIn(session, '登录成功');
@@ -213,14 +213,13 @@ export class AuthService {
   private static async mockLogin(payload: LoginPayload): Promise<AuthResult> {
     await AuthService.delay(MockConfig.NETWORK_DELAY_MS);
 
-    const username: string = payload.username.trim();
-    if (username.length < 2 || payload.password.length < 6) {
-      return AuthResult.failure(AUTH_ERROR_INVALID_CREDENTIALS, '账号或密码错误，请检查后重试');
+    if (payload.password.length < 6) {
+      return AuthResult.failure(AUTH_ERROR_INVALID_CREDENTIALS, '密码错误，请检查后重试');
     }
     if (payload.password === 'wrong-password') {
-      return AuthResult.failure(AUTH_ERROR_INVALID_CREDENTIALS, '账号或密码错误，请检查后重试');
+      return AuthResult.failure(AUTH_ERROR_INVALID_CREDENTIALS, '密码错误，请检查后重试');
     }
-    if (username === 'network-error') {
+    if (payload.password === 'network-error') {
       return AuthResult.failure(AUTH_ERROR_NETWORK, '无法连接服务器，请检查网络或服务器地址');
     }
     if (!payload.serverUrl.startsWith('http://') && !payload.serverUrl.startsWith('https://')) {
@@ -230,7 +229,7 @@ export class AuthService {
     AuthService.mockChallengeId = `mock-challenge-${Date.now()}`;
     AuthService.mockChallengeExpiresAt =
       Date.now() + MockConfig.MOCK_CHALLENGE_TTL_SECONDS * 1000;
-    AuthService.activeUsername = username;
+    AuthService.activeUsername = 'trilium';
     AuthService.activeServerUrl = AuthService.normalizeBaseUrl(payload.serverUrl);
 
     return AuthResult.twoFactorRequired(

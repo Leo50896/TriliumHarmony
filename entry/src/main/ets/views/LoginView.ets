@@ -10,19 +10,14 @@ import { LogoMark } from '../components/LogoMark';
 import { OtpInput } from '../components/OtpInput';
 
 /**
- * Login owns the two-step authentication state machine:
- *   loginStep 1 -> credentials
- *   loginStep 2 -> six-digit TOTP challenge
- * Navigation is deliberately local because the parent page only needs to know
- * whether authentication succeeded, not which step is showing.
+ * Login asks only for the password. When the server reports that TOTP is
+ * required, the six-digit challenge is shown as a bottom sheet over the same
+ * page; a server without 2FA never sees an OTP prompt.
  */
 @Component
 export struct LoginView {
   onAuthenticated: () => void = () => {};
-  @Prop initialStep: number = 1;
 
-  @State private loginStep: number = 1;
-  @State private username: string = '';
   @State private password: string = '';
   @State private serverUrl: string = MockConfig.DEFAULT_SERVER_URL;
   @State private activeServer: string = MockConfig.DEFAULT_SERVER_URL;
@@ -31,24 +26,13 @@ export struct LoginView {
   @State private isLoading: boolean = false;
   @State private isVerifying: boolean = false;
   @State private isResending: boolean = false;
+  @State private showTwoFactor: boolean = false;
   @State private errorMessage: string = '';
   @State private infoMessage: string = '';
   @State private countdown: number = 0;
   private timerId: number = -1;
 
   aboutToAppear(): void {
-    // Preview-only entry point. Production always starts at the credentials
-    // step (initialStep defaults to 1).
-    if (this.initialStep === 2) {
-      this.username = 'trilium';
-      this.activeServer = MockConfig.DEFAULT_SERVER_URL;
-      this.challengeId = 'preview-challenge';
-      this.loginStep = 2;
-      if (AuthService.useMock) {
-        this.startCountdown();
-      }
-      this.focusOtpInput();
-    }
   }
 
   aboutToDisappear(): void {
@@ -82,7 +66,7 @@ export struct LoginView {
       } catch (error) {
         // The user can still tap the OTP cells to focus the hidden input.
       }
-    }, 260);
+    }, 380);
   }
 
   private dismissKeyboard(): void {
@@ -111,6 +95,22 @@ export struct LoginView {
     this.onAuthenticated();
   }
 
+  private openTwoFactor(server: string, challengeId: string): void {
+    AuthService.setActiveIdentity(server);
+    this.activeServer = AuthService.normalizeBaseUrl(server);
+    this.challengeId = challengeId;
+    this.otpCode = '';
+    this.errorMessage = '';
+    this.infoMessage = '';
+    this.showTwoFactor = true;
+    if (AuthService.useMock) {
+      this.startCountdown();
+    } else {
+      this.countdown = 0;
+    }
+    this.focusOtpInput();
+  }
+
   private async handleLogin(): Promise<void> {
     if (this.isLoading) {
       return;
@@ -118,12 +118,11 @@ export struct LoginView {
     this.errorMessage = '';
     this.infoMessage = '';
 
-    const trimmedUser: string = this.username.trim();
     const effectiveServer: string = this.serverUrl.trim().length > 0
       ? this.serverUrl.trim() : MockConfig.DEFAULT_SERVER_URL;
-    if (trimmedUser.length === 0) {
+    if (this.password.length === 0) {
       this.dismissKeyboard();
-      this.errorMessage = '请输入用户名';
+      this.errorMessage = '请输入密码';
       return;
     }
     if (this.password.length < 6) {
@@ -139,41 +138,26 @@ export struct LoginView {
 
     this.isLoading = true;
     try {
-      if (!AuthService.useMock) {
-        const requiresTotp: boolean | null = await AuthService.requiresTotp(effectiveServer);
-        if (requiresTotp === true) {
-          // The password is kept in memory only; it is submitted together with
-          // the TOTP token in the next step, matching Trilium's login/token API.
-          AuthService.setActiveIdentity(trimmedUser, effectiveServer);
-          this.activeServer = AuthService.normalizeBaseUrl(effectiveServer);
-          this.challengeId = '';
-          this.otpCode = '';
-          this.loginStep = 2;
-          this.countdown = 0;
-          this.focusOtpInput();
-          return;
-        }
-      }
-
       const result: AuthResult = await AuthService.login(
-        new LoginPayload(trimmedUser, this.password, effectiveServer)
+        new LoginPayload(this.password, effectiveServer)
       );
-      if (!result.success) {
-        this.dismissKeyboard();
-        this.errorMessage = result.message;
+      if (result.requiresTwoFactor) {
+        this.openTwoFactor(effectiveServer, result.challengeId);
         return;
       }
-      if (result.requiresTwoFactor) {
-        this.challengeId = result.challengeId;
-        this.activeServer = AuthService.normalizeBaseUrl(effectiveServer);
-        this.otpCode = '';
-        this.loginStep = 2;
-        if (AuthService.useMock) {
-          this.startCountdown();
-        } else {
-          this.countdown = 0;
+      if (!result.success) {
+        // Some Trilium versions answer a password-only request with a generic
+        // 401 when TOTP is enabled. Ask /bootstrap before treating it as a bad
+        // password, then open the OTP sheet only if the server requires it.
+        if (!AuthService.useMock) {
+          const requiresTotp: boolean | null = await AuthService.requiresTotp(effectiveServer);
+          if (requiresTotp === true) {
+            this.openTwoFactor(effectiveServer, '');
+            return;
+          }
         }
-        this.focusOtpInput();
+        this.dismissKeyboard();
+        this.errorMessage = result.message;
         return;
       }
       if (result.session !== null) {
@@ -205,6 +189,7 @@ export struct LoginView {
         return;
       }
       if (result.session !== null) {
+        this.showTwoFactor = false;
         await this.completeLogin(result.session);
       }
     } finally {
@@ -238,7 +223,7 @@ export struct LoginView {
       return;
     }
     this.stopCountdown();
-    this.loginStep = 1;
+    this.showTwoFactor = false;
     this.challengeId = '';
     this.otpCode = '';
     this.errorMessage = '';
@@ -335,14 +320,6 @@ export struct LoginView {
 
       Column({ space: 12 }) {
         AuthTextField({
-          value: $username,
-          placeholder: '用户名',
-          icon: $r('app.media.ic_user'),
-          onSubmitted: () => {
-            this.handleLogin();
-          }
-        })
-        AuthTextField({
           value: $password,
           placeholder: '密码',
           icon: $r('app.media.ic_lock'),
@@ -363,6 +340,12 @@ export struct LoginView {
       }
       .width('100%')
       .margin({ top: 44 })
+
+      Text('仅需密码；服务器开启两步验证时会弹窗输入动态码')
+        .fontSize(11.5)
+        .fontColor($r('app.color.text_tertiary'))
+        .textAlign(TextAlign.Center)
+        .margin({ top: 14 })
 
       if (this.errorMessage.length > 0) {
         Column() {
@@ -387,7 +370,7 @@ export struct LoginView {
             .height(5)
             .borderRadius(3)
             .backgroundColor($r('app.color.warning'))
-          Text('Mock 模式：任意账号 + 6 位密码，动态码 123456')
+          Text('Mock 模式：6 位密码，动态码 123456')
             .fontSize(11.5)
             .fontColor($r('app.color.text_tertiary'))
             .layoutWeight(1)
@@ -404,22 +387,6 @@ export struct LoginView {
   @Builder
   private TwoFactorStep() {
     Column() {
-      Row({ space: 2 }) {
-        AppIcon({
-          icon: $r('app.media.ic_back'),
-          iconSize: 21,
-          tint: $r('app.color.text_secondary')
-        })
-        Text('返回')
-          .fontSize(14)
-          .fontColor($r('app.color.text_secondary'))
-      }
-      .height(36)
-      .onClick(() => {
-        this.backToCredentials();
-      })
-      .alignSelf(ItemAlign.Start)
-
       Stack({ alignContent: Alignment.Center }) {
         Row()
           .width(76)
@@ -446,7 +413,7 @@ export struct LoginView {
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .margin({ top: 18 })
-      Text('请输入身份验证器中显示的 6 位动态验证码')
+      Text('服务器要求两步验证，请输入身份验证器中的 6 位动态码')
         .fontSize(14)
         .lineHeight(22)
         .fontColor($r('app.color.text_secondary'))
@@ -455,11 +422,11 @@ export struct LoginView {
 
       Row({ space: 7 }) {
         AppIcon({
-          icon: $r('app.media.ic_user'),
+          icon: $r('app.media.ic_server'),
           iconSize: 14,
           tint: $r('app.color.primary_text')
         })
-        Text(`${this.username.trim()} · ${this.activeServer.replace('https://', '').replace('http://', '')}`)
+        Text(this.activeServer.replace('https://', '').replace('http://', ''))
           .fontSize(12)
           .fontColor($r('app.color.primary_text'))
           .maxLines(1)
@@ -565,11 +532,7 @@ export struct LoginView {
       Column() {
         Scroll() {
           Column() {
-            if (this.loginStep === 1) {
-              this.CredentialsStep()
-            } else {
-              this.TwoFactorStep()
-            }
+            this.CredentialsStep()
           }
           .width('100%')
           .constraintSize({ maxWidth: 440 })
@@ -596,5 +559,14 @@ export struct LoginView {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_primary'))
+    .bindSheet(this.showTwoFactor, this.TwoFactorStep, {
+      height: 640,
+      dragBar: true,
+      showClose: true,
+      backgroundColor: $r('app.color.bg_primary'),
+      onDisappear: () => {
+        this.showTwoFactor = false;
+      }
+    })
   }
 }

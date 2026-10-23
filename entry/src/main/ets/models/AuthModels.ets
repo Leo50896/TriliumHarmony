@@ -64,12 +64,10 @@ export class AuthResult {
 }
 
 export class LoginPayload {
-  username: string;
   password: string;
   serverUrl: string;
 
-  constructor(username: string, password: string, serverUrl: string) {
-    this.username = username;
+  constructor(password: string, serverUrl: string) {
     this.password = password;
     this.serverUrl = serverUrl;
   }

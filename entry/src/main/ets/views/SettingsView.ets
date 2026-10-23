@@ -29,14 +29,11 @@ export struct SettingsView {
   @StorageLink(StateKeys.THEME_MODE) private themeMode: string = ThemeService.SYSTEM;
   @StorageLink(StateKeys.BIOMETRIC_UNLOCK) private faceUnlock: boolean = false;
 
-  @State private username: string = '';
   @State private serverUrl: string = '';
   @State private noteCount: number = 0;
   @State private lastSyncLabel: string = '尚未同步';
   @State private syncing: boolean = false;
   @State private syncMenuOpen: boolean = false;
-  @State private accountSheetOpen: boolean = false;
-  @State private accountNameDraft: string = '';
 
   aboutToAppear(): void {
     this.refreshAccount();
@@ -67,7 +64,6 @@ export struct SettingsView {
 
   private refreshAccount(): void {
     const session: AuthSession | null = SessionStore.currentSession();
-    this.username = session !== null ? session.username : '';
     this.serverUrl = session !== null ? session.serverUrl : '';
   }
 
@@ -209,85 +205,6 @@ export struct SettingsView {
       .margin({ left: 58, right: 12 })
   }
 
-  private openAccountSheet(): void {
-    this.accountNameDraft = this.username;
-    this.accountSheetOpen = true;
-  }
-
-  private async saveAccountName(): Promise<void> {
-    const context: common.UIAbilityContext | null = this.context();
-    const session: AuthSession | null = SessionStore.currentSession();
-    const name: string = this.accountNameDraft.trim();
-    if (context !== null && session !== null && name.length > 0) {
-      const updated: AuthSession = new AuthSession(session.accessToken, session.refreshToken,
-        session.expiresAt, name, session.serverUrl);
-      await SessionStore.save(context, updated);
-      this.username = name;
-      this.notify('登录账号已更新');
-    }
-    this.accountSheetOpen = false;
-  }
-
-  @Builder
-  private AccountSheet() {
-    Column({ space: 16 }) {
-      Text('账户信息')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-
-      Text('登录账号')
-        .fontSize(11)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      TextInput({ text: this.accountNameDraft, placeholder: '登录账号' })
-        .height(42)
-        .fontSize(14)
-        .backgroundColor($r('app.color.bg_secondary'))
-        .borderRadius(9)
-        .onChange((value: string) => {
-          this.accountNameDraft = value;
-        })
-
-      Text('服务器')
-        .fontSize(11)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Text(this.serverUrl)
-        .fontSize(13)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .padding(10)
-        .backgroundColor($r('app.color.bg_secondary'))
-        .borderRadius(9)
-
-      Row({ space: 10 }) {
-        Button('取消')
-          .layoutWeight(1)
-          .height(40)
-          .fontSize(13)
-          .backgroundColor($r('app.color.bg_secondary'))
-          .fontColor($r('app.color.text_primary'))
-          .onClick(() => {
-            this.accountSheetOpen = false;
-          })
-        Button('保存')
-          .layoutWeight(1)
-          .height(40)
-          .fontSize(13)
-          .backgroundColor($r('app.color.primary'))
-          .fontColor($r('app.color.text_on_primary'))
-          .onClick(() => {
-            this.saveAccountName();
-          })
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .padding(20)
-  }
-
   @Builder
   private SyncOptions() {
     Row({ space: 6 }) {
@@ -344,7 +261,7 @@ export struct SettingsView {
               .width('100%')
               .padding({ left: 4, top: 2, bottom: 4 })
 
-            this.SectionTitle('账户与同步')
+            this.SectionTitle('服务器与同步')
 
             Column() {
               SettingsNavRow({
@@ -543,15 +460,6 @@ export struct SettingsView {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_primary'))
-    .bindSheet(this.accountSheetOpen, this.AccountSheet, {
-      height: 360,
-      dragBar: true,
-      showClose: false,
-      backgroundColor: $r('app.color.bg_primary'),
-      onDisappear: () => {
-        this.accountSheetOpen = false;
-      }
-    })
   }
 
   @Builder

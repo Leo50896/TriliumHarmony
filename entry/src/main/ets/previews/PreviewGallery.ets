@@ -15,11 +15,11 @@ struct LoginPreview {
   }
 }
 
-@Preview({ title: '1.1 双因子验证页', width: 390, height: 844, colorMode: 'dark' })
+@Preview({ title: '1.1 双因子验证弹窗', width: 390, height: 844, colorMode: 'dark' })
 @Component
 struct TwoFactorPreview {
   build() {
-    LoginView({ initialStep: 2 })
+    LoginView()
   }
 }
 
