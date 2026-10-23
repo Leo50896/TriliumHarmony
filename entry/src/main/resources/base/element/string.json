@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Trilium Notes client for HarmonyOS"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Trilium main ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Trilium"
+    },
+    {
+      "name": "internet_reason",
+      "value": "用于连接 Trilium 服务器并同步笔记"
+    },
+    {
+      "name": "biometric_reason",
+      "value": "用于人脸解锁本地笔记"
+    }
+  ]
+}

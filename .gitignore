@@ -1,0 +1,25 @@
+# DevEco Studio / HarmonyOS build output
+.hvigor/
+.idea/
+.build/
+build/
+entry/build/
+entry/.preview/
+oh_modules/
+entry/oh_modules/
+node_modules/
+local.properties
+
+# Packaging / signing artifacts
+*.hap
+*.hsp
+*.app
+*.p7b
+*.p12
+*.cer
+*.profile
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+  body { font-family: -apple-system, "HarmonyOS Sans", sans-serif; }
+  #map { width: 100%; height: 100%; display: block; }
+  .node-label { font-size: 11px; pointer-events: none; }
+  #openNoteBtn {
+    display: none;
+    position: fixed;
+    z-index: 20;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 15px;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: #2f6fd0;
+    color: #fff;
+    font-size: 12px;
+    line-height: 28px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    white-space: nowrap;
+  }
+</style>
+<script src="d3.min.js"></script>
+</head>
+<body>
+<svg id="map"></svg>
+<button id="openNoteBtn">打开笔记</button>
+<script>
+(function () {
+  var svg = d3.select("#map");
+  var root = svg.append("g");
+  var linkLayer = root.append("g");
+  var nodeLayer = root.append("g");
+  var labelLayer = root.append("g");
+  var zoom = d3.zoom().scaleExtent([0.15, 7]).on("zoom", function (event) {
+    root.attr("transform", event.transform);
+    drawLabels(event.transform.k);
+    positionOpenButton();
+  });
+  svg.call(zoom);
+  var current = null;
+  var simulation = null;
+  var theme = { dark: true };
+  var selected = "";
+  var openBtn = document.getElementById("openNoteBtn");
+
+  function positionOpenButton() {
+    if (!selected || !window.mapNodes) { openBtn.style.display = "none"; return; }
+    var n = window.mapNodes.filter(function (x) { return x.id === selected; })[0];
+    if (!n) { openBtn.style.display = "none"; return; }
+    var t = d3.zoomTransform(svg.node());
+    var x = n.x * t.k + t.x;
+    var y = n.y * t.k + t.y;
+    if (x < -20 || x > window.innerWidth + 20 || y < -20 || y > window.innerHeight + 20) {
+      openBtn.style.display = "none";
+      return;
+    }
+    var left = x - 30;
+    if (left + 90 > window.innerWidth) left = x - 90;
+    if (left < 6) left = 6;
+    var top = y - 44;
+    if (top < 6) top = y + 18;
+    openBtn.style.left = left + "px";
+    openBtn.style.top = top + "px";
+    openBtn.style.display = "block";
+    openBtn.setAttribute("data-note-id", selected);
+  }
+
+  openBtn.addEventListener("click", function () {
+    var id = openBtn.getAttribute("data-note-id");
+    openBtn.style.display = "none";
+    if (id && window.arkBridge && window.arkBridge.onOpenTap) {
+      window.arkBridge.onOpenTap(id);
+    }
+  });
+
+  function colorFor(n) {
+    if (n.color) return n.color;
+    return theme.dark ? "#6b6b6b" : "#4a4a4a";
+  }
+
+  function renderMapJson(text) {
+    var data = JSON.parse(text);
+    current = data;
+    theme.dark = !!data.dark;
+    document.body.style.background = theme.dark ? "#1e1f22" : "#ffffff";
+    linkLayer.selectAll("*").remove();
+    nodeLayer.selectAll("*").remove();
+    labelLayer.selectAll("*").remove();
+
+    var nodes = data.nodes.map(function (n) { return Object.assign({}, n); });
+    var links = data.links.map(function (l) { return Object.assign({}, l); });
+    var byId = {};
+    nodes.forEach(function (n) { byId[n.id] = n; });
+
+    simulation = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id(function (d) { return d.id; })
+        .distance(function (l) { return l.kind === "parent" ? 120 : 220; })
+        .strength(function (l) { return l.kind === "parent" ? 0.7 : 0.15; }))
+      .force("charge", d3.forceManyBody().strength(-420).distanceMax(1800))
+      .force("center", d3.forceCenter(0, 0).strength(0.03))
+      .force("collide", d3.forceCollide().radius(function (d) { return (d.folder ? 14 : 5); }).iterations(2));
+
+    var link = linkLayer.selectAll("line").data(links).enter().append("line")
+      .attr("stroke", theme.dark ? "#999999" : "#333333")
+      .attr("stroke-width", 1)
+      .attr("stroke-opacity", 0.18)
+      .attr("stroke-dasharray", function (l) { return l.kind === "relation" || l.kind === "body" ? "4 4" : "none"; });
+
+    var node = nodeLayer.selectAll("g").data(nodes).enter().append("g")
+      .style("cursor", "pointer")
+      .on("click", function (event, d) {
+        event.stopPropagation();
+        selected = d.id;
+        updateSelection();
+        if (window.arkBridge && window.arkBridge.onNoteTap) {
+          window.arkBridge.onNoteTap(d.id);
+        }
+        positionOpenButton();
+      });
+
+    node.append("circle")
+      .attr("r", function (d) { return d.folder ? 9 : 3; })
+      .attr("fill", colorFor)
+      .attr("stroke", theme.dark ? "#ffffff" : "#b0b0b0")
+      .attr("stroke-width", function (d) { return d.folder ? 1.5 : 0; });
+
+    node.append("text")
+      .attr("class", "node-label")
+      .attr("x", function (d) { return (d.folder ? 9 : 3) + 5; })
+      .attr("y", 3)
+      .attr("fill", theme.dark ? "#cccccc" : "#333333")
+      .style("display", "none")
+      .text(function (d) { return d.title; });
+
+    node.append("title").text(function (d) { return d.title; });
+
+    simulation.on("tick", function () {
+      link.attr("x1", function (l) { return l.source.x; })
+        .attr("y1", function (l) { return l.source.y; })
+        .attr("x2", function (l) { return l.target.x; })
+        .attr("y2", function (l) { return l.target.y; });
+      node.attr("transform", function (d) { return "translate(" + d.x + "," + d.y + ")"; });
+      positionOpenButton();
+    });
+
+    simulation.on("end", function () {
+      focusRoot();
+      drawLabels(0.9);
+    });
+
+    window.mapNodes = nodes;
+    window.mapLinks = links;
+    window.mapNodeSel = node;
+    window.mapLinkSel = link;
+
+    updateSelection();
+  }
+
+  function drawLabels(scale) {
+    if (!current) return;
+    // depth 0/1 always; depth 2 at 0.45, everything at 0.75.
+    var maxDepth = scale >= 0.75 ? 99 : (scale >= 0.45 ? 2 : 1);
+    var lastY = -99999;
+    var labels = labelLayer.selectAll("text").data(
+      (window.mapNodes || []).filter(function (n) {
+        return n.depth <= maxDepth;
+      }),
+      function (d) { return d.id; }
+    );
+    labels.exit().remove();
+    var entered = labels.enter().append("text")
+      .attr("class", "node-label")
+      .attr("fill", theme.dark ? "#cccccc" : "#333333")
+      .attr("x", 5).attr("y", 3);
+    entered.merge(labels).text(function (d) { return d.title; });
+    entered.merge(labels).each(function (d) {
+      var g = d3.select(this);
+      if (Math.abs(d.y - lastY) < 20) {
+        g.style("display", "none");
+        return;
+      }
+      var title = d.title || "";
+      var t = d3.zoomTransform(svg.node());
+      g.text(title);
+      var radius = d.folder ? 9 : 3;
+      var offset = radius + 5;
+      var screenX = d.x * t.k + t.x + offset * t.k;
+      var textWidth = 0;
+      try { textWidth = this.getComputedTextLength() * t.k; } catch (e) {}
+      if (screenX + textWidth > svg.node().clientWidth - 6) {
+        g.attr("text-anchor", "end").attr("x", -offset);
+      } else {
+        g.attr("text-anchor", "start").attr("x", offset);
+      }
+      var opacity = 1;
+      if (d.depth === 2) {
+        opacity = t.k < 0.6 ? Math.max(0, Math.min(1, (t.k - 0.45) / 0.15)) : 1;
+      } else if (d.depth > 2) {
+        opacity = t.k < 0.9 ? Math.max(0, Math.min(1, (t.k - 0.75) / 0.15)) : 1;
+      }
+      g.style("display", null)
+        .style("opacity", opacity)
+        .attr("transform", "translate(" + d.x + "," + d.y + ")");
+      lastY = d.y;
+    });
+  }
+
+  function updateSelection() {
+    if (!window.mapLinkSel) return;
+    window.mapLinkSel
+      .attr("stroke", function (l) {
+        var active = selected && (l.source.id === selected || l.target.id === selected);
+        if (active) return "#4a90e2";
+        return theme.dark ? "#999999" : "#333333";
+      })
+      .attr("stroke-opacity", function (l) {
+        var active = selected && (l.source.id === selected || l.target.id === selected);
+        if (active) return 0.9;
+        return selected ? 0.06 : 0.12;
+      })
+      .attr("stroke-width", function (l) {
+        var active = selected && (l.source.id === selected || l.target.id === selected);
+        return active ? 2 : 1;
+      });
+  }
+
+  function fitToScreen(animate) {
+    if (!window.mapNodes || !window.mapNodes.length) return;
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    window.mapNodes.forEach(function (n) {
+      minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+    });
+    var w = svg.node().clientWidth, h = svg.node().clientHeight;
+    var pad = 40;
+    var k = Math.min((w - pad * 2) / Math.max(1, maxX - minX), (h - pad * 2) / Math.max(1, maxY - minY), 2);
+    var tx = (w - (minX + maxX) * k) / 2;
+    var ty = (h - (minY + maxY) * k) / 2;
+    var transform = d3.zoomIdentity.translate(tx, ty).scale(k);
+    if (animate) svg.transition().duration(300).call(zoom.transform, transform);
+    else svg.call(zoom.transform, transform);
+  }
+
+  // Initial camera: root + first two levels, matching the native focus policy.
+  function focusRoot() {
+    if (!window.mapNodes) return;
+    var rootNode = window.mapNodes.filter(function (n) { return n.id === "root"; })[0];
+    if (!rootNode) return;
+    var w = svg.node().clientWidth, h = svg.node().clientHeight;
+    var k = 0.9;
+    var tx = 70 - rootNode.x * k;
+    var ty = h / 2 - rootNode.y * k;
+    svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+  }
+
+  svg.on("dblclick.zoom", null);
+  svg.on("dblclick", function () { fitToScreen(true); });
+  svg.on("click", function (event) {
+    // Any click that is not stopped by a node clears the selection.
+    selected = "";
+    openBtn.style.display = "none";
+    updateSelection();
+    if (window.arkBridge && window.arkBridge.onBlankTap) {
+      window.arkBridge.onBlankTap();
+    }
+    drawLabels(1);
+  });
+
+  window.renderMapJson = renderMapJson;
+  window.focusMapRoot = focusRoot;
+  window.fitMap = fitToScreen;
+
+  // Tell native the page is ready.
+  if (window.arkBridge && window.arkBridge.onReady) {
+    window.arkBridge.onReady();
+  }
+})();
+</script>
+</body>
+</html>

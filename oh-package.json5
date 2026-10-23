@@ -1,0 +1,8 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "trilium-harmony",
+  "version": "0.90.0",
+  "description": "A native HarmonyOS ArkUI client for Trilium Notes with 2FA login.",
+  "dependencies": {},
+  "devDependencies": {}
+}

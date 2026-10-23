@@ -1,0 +1,3 @@
+# Keep the public Ability entry points and network DTO field names.
+-keep ./src/main/ets/entryability
+-keep ./src/main/ets/services
