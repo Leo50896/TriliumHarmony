@@ -1,6 +1,21 @@
 # Trilium HarmonyOS
 
-一个使用 **ArkTS + ArkUI** 编写的 Trilium Notes 鸿蒙原生客户端原型。项目根据 4 张 UI 设计稿实现了登录页、带完整双因子认证（TOTP）的登录流程、主阅读/编辑页、侧边抽屉与设置页；默认连接真实 Trilium 服务器，并可切换回 Mock 模式。
+[![HarmonyOS](https://img.shields.io/badge/HarmonyOS-7.0-0A84FF?logo=harmonyos)](https://www.harmonyos.com/)
+[![ArkTS](https://img.shields.io/badge/ArkTS-ArkUI-3178C6)](https://developer.huawei.com/consumer/cn/arkts/)
+[![Local-First](https://img.shields.io/badge/Architecture-Local--First-2E7D32)](#)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
+> **License**：本项目基于 **GNU AGPL-3.0** 开源。
+>
+> **获取完整源码**：<https://github.com/Leo50896/TriliumHarmony>
+>
+> 应用内入口：设置 → 开源许可与源码。
+
+一个 **全原生渲染的 Local-First 鸿蒙客户端**：主体界面、阅读器、编辑器、原生表格、PDF 与属性面板均使用 **ArkTS + ArkUI** 渲染；笔记地图由内置 D3 WebView 承载。默认连接真实 Trilium 服务器，也可切换 Mock 模式。
+
+项目从架构设计、源码对齐、真机调试到文档整理，**全程使用 DSH AI 结对编程完成**。
+
+> AGPL-3.0 文本随应用内置：`entry/src/main/resources/rawfile/agpl-3.0.txt`；`LicenseView` 提供完整协议、版权声明与源码仓库入口。
 
 > App 图标与页面内 `LogoMark` 已从 [TriliumNext/Trilium](https://github.com/TriliumNext/Trilium) 官方仓库提取 `apps/client/src/assets/icon.svg`，渲染为 1024×1024 PNG，并适配为应用的深色启动器图标；启动页、登录页和侧边抽屉统一使用同一官方图形。
 
@@ -925,6 +940,14 @@ commit: 985f393e5fc79e80c3aca8a6e19b30ef9f23e088
 
 **已完成**
 
+- 图片、图片附件、PDF 文件笔记预览；图片支持缩放/平移，PDF 使用官方 PDF Kit；
+- 本地全量 SQLite 持久化：`local_notes` / `local_meta`，启动恢复、离线回退；
+- ETAPI 增量同步与心跳同步：5/30/60 秒可配置，前后台生命周期自动调度；
+- 原生属性管理：标签/Relation 增删改、继承属性提示、HSL/Hex 颜色选择器；
+- 全量 Boxicons 图标映射与笔记类型图标渲染；
+- 笔记地图：树形/链接两种模式，原生入口 + D3 WebView 画布，支持缩放、平移、节点确认与打开；
+- 人脸解锁：系统 `UserAuthenticationKit`、启动/前后台锁定、设置开关与持久化；
+- 三点菜单删除笔记：ETAPI 删除 + 本地缓存清理 + 回到父笔记；
 - `assembleHap` 编译通过，ArkTS 类型检查通过；
 - 在 Pura X View 模拟器上安装并运行；
 - 官方三叶 Logo 已渲染为 1024×1024 App 图标，卸载重装后启动器生效；
@@ -971,12 +994,27 @@ commit: 985f393e5fc79e80c3aca8a6e19b30ef9f23e088
 - 表格真正跨行合并布局（当前 rowspan 用重复内容 + 弱化背景降级）；
 - Callout 内部的复杂表格/嵌套 Callout 的完整样式（基础嵌套块已支持）；
 - RichEditor 只支持基础 B/I/H1/H2，不支持表格、图片、列表等复杂结构；
-- 图片/文件/附件笔记预览；
-- 新建/重命名/删除笔记的完整写操作（标题与正文保存已接入）；
+- 新建/重命名笔记的完整写操作（标题与正文保存、删除已接入）；
 - 真实 Token 的服务端撤销与续期策略；
-- 笔记持久化与增量同步；
-- 生物识别、HUKS 加密存储（仅在设置页保留 UI）；
 - 单元测试与 UI 自动化脚本。
 
-下一步建议在现有阅读/编辑能力上补全图片/附件缓存、TODO 交互、服务端分页搜索和更完整的离线目录；UI 继续全部使用 ArkUI。
+下一步建议在现有阅读/编辑能力上补全 TODO 交互、服务端分页搜索和更完整的离线目录；除笔记地图外，UI 继续全部使用 ArkUI。
+
+---
+
+## License
+
+本项目基于 **GNU Affero General Public License v3.0（AGPL-3.0）** 开源。
+
+```text
+Copyright (C) 2026 Leo50896
+```
+
+- 协议全文：[`entry/src/main/resources/rawfile/agpl-3.0.txt`](entry/src/main/resources/rawfile/agpl-3.0.txt)
+- 应用内查看：设置 → 开源许可与源码
+- 完整对应源码：<https://github.com/Leo50896/TriliumHarmony>
+
+AGPL-3.0 要求：修改并通过网络提供本应用服务时，必须向用户提供对应的完整源码。源码仓库入口同时内置于应用的“开源许可与源码”页面。
+
+上游 TriliumNext/Trilium 的代码、品牌与图标遵循其自身许可证与商标规范，详见 [`docs/upstream-reference.md`](docs/upstream-reference.md) 与 [`docs/branding/README.md`](docs/branding/README.md)。
 
