@@ -182,6 +182,7 @@ export struct EditorView {
   @State private offlineLabel: string = '';
   @State private wordCount: number = 0;
   @State private modifiedLabel: string = '';
+  @State private saveStatus: string = '';
   @State private rawContent: string = '';
   @State @Watch('onEditingStateChanged') private isEditing: boolean = false;
   @State @Watch('onEditingStateChanged') private isRichEditing: boolean = false;
@@ -476,6 +477,7 @@ export struct EditorView {
     this.errorMessage = '';
     this.isOffline = false;
     this.offlineLabel = '';
+    this.saveStatus = '';
     this.isRestoringScroll = true;
     this.readingProgress = 0;
     this.lastReadingOffset = 0;
@@ -527,7 +529,11 @@ export struct EditorView {
         this.applyNote(local.note, local.content);
         this.isOffline = false;
         this.offlineLabel = '';
+        this.saveStatus = local.syncStatus === 1 ? '待同步' : '';
         this.loadedNoteId = local.note.noteId;
+        if (local.syncStatus === 1) {
+          this.pushInBackground();
+        }
         this.isLoading = false;
         this.restoreScrollPosition(local.note.noteId);
         return;
@@ -1306,36 +1312,47 @@ export struct EditorView {
   }
 
   private async saveBlockContent(content: string): Promise<void> {
-    if (this.note === null || this.isSaving) {
-      this.notify('当前无法保存，请稍后重试');
-      return;
-    }
-    if (this.session === null) {
-      this.session = await this.resolveSession();
-    }
-    if (this.session === null) {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (this.note === null || context === null) {
       this.notify('当前无法保存，请稍后重试');
       return;
     }
     const targetId: string = this.note.noteId;
-    this.isSaving = true;
     try {
-      console.info(`BLOCK_SAVE_START target=${targetId} length=${content.length}`);
-      await EtapiService.updateNoteContent(this.session, targetId, content);
-      console.info(`BLOCK_SAVE_OK target=${targetId}`);
+      console.info(`LOCAL_SAVE_START target=${targetId} length=${content.length}`);
+      await LocalStore.updateNoteContent(context, SessionStore.accountKey(), targetId, content);
+      console.info(`LOCAL_SAVE_OK target=${targetId}`);
       this.isEditing = false;
       this.blocks = this.blocks.slice();
       this.wordCount = HtmlContentParser.plainText(this.blocks).replace(/[\s☐☑]/g, '').length;
-      this.notify('段落已保存');
+      this.saveStatus = '本地已保存';
+      this.notify('本地已保存');
+      setTimeout(() => {
+        this.pushInBackground();
+      }, 600);
     } catch (error) {
-      if (error instanceof Error && error.message === 'AUTH_401') {
-        this.onSessionExpired();
-        this.notify('登录状态已失效');
-      } else {
-        this.notify('保存失败，请检查网络后重试');
-      }
-    } finally {
-      this.isSaving = false;
+      this.notify('本地保存失败，请检查存储空间');
+    }
+  }
+
+  private async pushInBackground(): Promise<void> {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (context === null || this.note === null) {
+      return;
+    }
+    const active: AuthSession | null = this.session ?? await this.resolveSession();
+    if (active === null) {
+      this.saveStatus = '待同步';
+      return;
+    }
+    const accountKey: string = SessionStore.accountKey();
+    this.saveStatus = '同步中...';
+    try {
+      await SyncService.sync(context, active, accountKey);
+      const pending: number = await LocalStore.pendingCount(context, accountKey);
+      this.saveStatus = pending > 0 ? '待同步' : '已同步';
+    } catch (error) {
+      this.saveStatus = '待同步';
     }
   }
 
@@ -1618,86 +1635,62 @@ export struct EditorView {
   }
 
   private async saveRichEdit(): Promise<void> {
-    if (this.isOffline) {
-      this.notify('离线缓存为只读，联网后可保存');
-      return;
-    }
-    if (this.note === null || this.session === null || this.isSaving) {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (this.note === null || context === null) {
       return;
     }
     if (!this.editingTargetValid() || this.note === null) {
       return;
     }
     const targetId: string = this.note.noteId;
-    console.info(`EDIT_SAVE_START target=${targetId} selected=${this.noteId} ` +
-      `title=${this.note.title}`);
     const title: string = this.editTitle.trim();
     if (title.length === 0) {
       this.notify('标题不能为空');
       return;
     }
-    this.isSaving = true;
     try {
-      if (title !== this.note.title) {
-        await EtapiService.updateNoteTitle(this.session, targetId, title);
-      }
-      await EtapiService.updateNoteContent(this.session, targetId, this.serializeRichHtml());
-      console.info(`EDIT_SAVE_OK target=${targetId}`);
+      const accountKey: string = SessionStore.accountKey();
+      await LocalStore.updateNoteTitle(context, accountKey, targetId, title);
+      await LocalStore.updateNoteContent(context, accountKey, targetId, this.serializeRichHtml());
+      this.note.title = title;
       this.isRichEditing = false;
       this.richLoaded = false;
-      this.notify('已保存到 Trilium');
+      this.saveStatus = '本地已保存';
+      this.notify('本地已保存');
       await this.loadNote();
+      this.pushInBackground();
     } catch (error) {
-      if (error instanceof Error && error.message === 'AUTH_401') {
-        this.onSessionExpired();
-        this.notify('登录状态已失效');
-      } else {
-        this.notify('保存失败，请检查网络后重试');
-      }
-    } finally {
-      this.isSaving = false;
+      this.notify('本地保存失败，请检查存储空间');
     }
   }
 
   private async saveNote(): Promise<void> {
-    if (this.isOffline) {
-      this.notify('离线缓存为只读，联网后可保存');
-      return;
-    }
-    if (this.note === null || this.session === null || this.isSaving) {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (this.note === null || context === null) {
       return;
     }
     if (!this.editingTargetValid() || this.note === null) {
       return;
     }
     const targetId: string = this.note.noteId;
-    console.info(`EDIT_SAVE_START target=${targetId} selected=${this.noteId} ` +
-      `title=${this.note.title}`);
     const title: string = this.editTitle.trim();
     if (title.length === 0) {
       this.notify('标题不能为空');
       return;
     }
 
-    this.isSaving = true;
     try {
-      if (title !== this.note.title) {
-        await EtapiService.updateNoteTitle(this.session, targetId, title);
-      }
-      await EtapiService.updateNoteContent(this.session, targetId, this.editContent);
-      console.info(`EDIT_SAVE_OK target=${targetId}`);
+      const accountKey: string = SessionStore.accountKey();
+      await LocalStore.updateNoteTitle(context, accountKey, targetId, title);
+      await LocalStore.updateNoteContent(context, accountKey, targetId, this.editContent);
+      this.note.title = title;
       this.isEditing = false;
-      this.notify('已保存到 Trilium');
+      this.saveStatus = '本地已保存';
+      this.notify('本地已保存');
       await this.loadNote();
+      this.pushInBackground();
     } catch (error) {
-      if (error instanceof Error && error.message === 'AUTH_401') {
-        this.onSessionExpired();
-        this.notify('登录状态已失效');
-      } else {
-        this.notify('保存失败，请检查网络后重试');
-      }
-    } finally {
-      this.isSaving = false;
+      this.notify('本地保存失败，请检查存储空间');
     }
   }
 
@@ -2644,7 +2637,19 @@ export struct EditorView {
       Text('•')
         .fontSize(12)
         .fontColor($r('app.color.text_tertiary'))
-      if (this.isOffline) {
+      if (this.saveStatus.length > 0) {
+        Row()
+          .width(5)
+          .height(5)
+          .borderRadius(3)
+          .backgroundColor(this.saveStatus === '待同步' ?
+            $r('app.color.warning') : $r('app.color.success'))
+          .margin({ left: 2 })
+        Text(this.saveStatus)
+          .fontSize(12)
+          .fontColor(this.saveStatus === '待同步' ?
+            $r('app.color.warning') : $r('app.color.primary_text'))
+      } else if (this.isOffline) {
         Row()
           .width(5)
           .height(5)

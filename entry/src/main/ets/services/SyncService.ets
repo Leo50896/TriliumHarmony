@@ -5,6 +5,7 @@ import { EtapiService } from './EtapiService';
 import {
   LocalMutation,
   LocalMutationKind,
+  LocalNote,
   LocalStore
 } from './LocalStore';
 
@@ -37,6 +38,12 @@ export class SyncService {
 
   private static async etapiDelta(context: common.UIAbilityContext, session: AuthSession,
     accountKey: string): Promise<SyncResult> {
+    // Push local edits before pulling. If this fails, a stale remote copy must
+    // not overwrite the dirty local rows.
+    const pending: number = await LocalStore.pendingCount(context, accountKey);
+    if (pending > 0) {
+      await SyncService.pushPending(context, session, accountKey);
+    }
     const remote: TriliumNote[] = await EtapiService.getAllNotes(session);
     const local: TriliumNote[] = await LocalStore.all(context, accountKey);
     const lastSync: number = await LocalStore.lastSyncTime(context, accountKey);
@@ -154,6 +161,21 @@ export class SyncService {
     await LocalStore.setLastSyncTime(context, accountKey, Date.now());
     console.info(`ETAPI_DELTA done changes=${mutations.length}`);
     return new SyncResult(false, mutations.length + parentUpdates.length + positionUpdates.length, '');
+  }
+
+  static async pushPending(context: common.UIAbilityContext, session: AuthSession,
+    accountKey: string): Promise<number> {
+    const pending: LocalNote[] = await LocalStore.pendingNotes(context, accountKey);
+    let pushed: number = 0;
+    for (let index: number = 0; index < pending.length; index++) {
+      const local: LocalNote = pending[index];
+      await EtapiService.updateNoteTitle(session, local.note.noteId, local.note.title);
+      await EtapiService.updateNoteContent(session, local.note.noteId, local.content);
+      await LocalStore.markSynced(context, accountKey, local.note.noteId);
+      pushed++;
+      console.info(`SYNC_PUSH_OK note=${local.note.noteId} remaining=${pending.length - index - 1}`);
+    }
+    return pushed;
   }
 
   static async sync(context: common.UIAbilityContext, session: AuthSession,

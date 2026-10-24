@@ -19,7 +19,6 @@ export struct BlockRichEditor {
 
   private controller: RichEditorController = new RichEditorController();
   private loaded: boolean = false;
-  private committed: boolean = false;
   private originalText: string = '';
   @State private boldActive: boolean = false;
   @State private italicActive: boolean = false;
@@ -482,10 +481,6 @@ export struct BlockRichEditor {
   }
 
   private commit(): void {
-    if (this.committed) {
-      return;
-    }
-    this.committed = true;
     const segments: InlineSegment[] = this.buildSegments();
     const headingLevel: number = this.h1Active ? 1 : (this.h2Active ? 2 : 0);
     this.onCommit(segments, this.textOf(segments), headingLevel);

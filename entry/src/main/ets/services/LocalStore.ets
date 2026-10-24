@@ -45,11 +45,14 @@ export class LocalNote {
   note: TriliumNote;
   content: string;
   contentCached: boolean;
+  syncStatus: number;
 
-  constructor(note: TriliumNote, content: string, contentCached: boolean) {
+  constructor(note: TriliumNote, content: string, contentCached: boolean,
+    syncStatus: number = 0) {
     this.note = note;
     this.content = content;
     this.contentCached = contentCached;
+    this.syncStatus = syncStatus;
   }
 }
 
@@ -179,7 +182,8 @@ export class LocalStore {
       }
       const note: TriliumNote = LocalStore.toNote(rs);
       return new LocalNote(note, rs.getString(rs.getColumnIndex('content')),
-        rs.getLong(rs.getColumnIndex('content_cached')) === 1);
+        rs.getLong(rs.getColumnIndex('content_cached')) === 1,
+        rs.getLong(rs.getColumnIndex('sync_status')));
     } finally {
       rs.close();
     }
@@ -352,6 +356,89 @@ export class LocalStore {
       `UPDATE ${NOTES_TABLE} SET note_position = ?, updated_at = ?
        WHERE account_key = ? AND note_id = ?`,
       [position, Date.now(), accountKey, noteId]);
+  }
+
+  /**
+   * Local-first content write. The row is immediately marked dirty so the next
+   * sync/heartbeat pushes it even if the app is killed before the network call.
+   */
+  static async updateNoteContent(context: common.UIAbilityContext, accountKey: string,
+    noteId: string, content: string): Promise<void> {
+    const store: relationalStore.RdbStore = await LocalStore.open(context);
+    await store.executeSql(
+      `UPDATE ${NOTES_TABLE}
+       SET content = ?, content_cached = 1, sync_status = 1, updated_at = ?
+       WHERE account_key = ? AND note_id = ?`,
+      [content, Date.now(), accountKey, noteId]);
+  }
+
+  static async updateNoteTitle(context: common.UIAbilityContext, accountKey: string,
+    noteId: string, title: string): Promise<void> {
+    const store: relationalStore.RdbStore = await LocalStore.open(context);
+    await store.executeSql(
+      `UPDATE ${NOTES_TABLE}
+       SET title = ?, sync_status = 1, updated_at = ?
+       WHERE account_key = ? AND note_id = ?`,
+      [title, Date.now(), accountKey, noteId]);
+  }
+
+  static async syncStatusFor(context: common.UIAbilityContext, accountKey: string,
+    noteId: string): Promise<number> {    const store: relationalStore.RdbStore = await LocalStore.open(context);
+    const rs: relationalStore.ResultSet = await store.querySql(
+      `SELECT sync_status FROM ${NOTES_TABLE} WHERE account_key = ? AND note_id = ?`,
+      [accountKey, noteId]);
+    try {
+      if (rs.goToFirstRow()) {
+        return rs.getLong(rs.getColumnIndex('sync_status'));
+      }
+    } finally {
+      rs.close();
+    }
+    return 0;
+  }
+
+  static async pendingNotes(context: common.UIAbilityContext,
+    accountKey: string): Promise<LocalNote[]> {
+    const store: relationalStore.RdbStore = await LocalStore.open(context);
+    const rs: relationalStore.ResultSet = await store.querySql(
+      `SELECT * FROM ${NOTES_TABLE}
+       WHERE account_key = ? AND sync_status = 1
+       ORDER BY updated_at ASC`, [accountKey]);
+    const notes: LocalNote[] = [];
+    try {
+      while (rs.goToNextRow()) {
+        const note: TriliumNote = LocalStore.toNote(rs);
+        notes.push(new LocalNote(note, rs.getString(rs.getColumnIndex('content')),
+          rs.getLong(rs.getColumnIndex('content_cached')) === 1, 1));
+      }
+    } finally {
+      rs.close();
+    }
+    return notes;
+  }
+
+  static async pendingCount(context: common.UIAbilityContext,
+    accountKey: string): Promise<number> {
+    const store: relationalStore.RdbStore = await LocalStore.open(context);
+    const rs: relationalStore.ResultSet = await store.querySql(
+      `SELECT COUNT(*) AS total FROM ${NOTES_TABLE}
+       WHERE account_key = ? AND sync_status = 1`, [accountKey]);
+    try {
+      if (rs.goToFirstRow()) {
+        return rs.getLong(rs.getColumnIndex('total'));
+      }
+    } finally {
+      rs.close();
+    }
+    return 0;
+  }
+
+  static async markSynced(context: common.UIAbilityContext, accountKey: string,
+    noteId: string): Promise<void> {
+    const store: relationalStore.RdbStore = await LocalStore.open(context);
+    await store.executeSql(
+      `UPDATE ${NOTES_TABLE} SET sync_status = 0, updated_at = ?
+       WHERE account_key = ? AND note_id = ?`, [Date.now(), accountKey, noteId]);
   }
 
   static async updateAttributes(context: common.UIAbilityContext, accountKey: string,
