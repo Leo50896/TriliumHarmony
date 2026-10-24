@@ -40,6 +40,9 @@
     root.attr("transform", event.transform);
     drawLabels(event.transform.k);
     positionOpenButton();
+    if (window.arkBridge && window.arkBridge.onZoomChanged) {
+      window.arkBridge.onZoomChanged(event.transform.k);
+    }
   });
   svg.call(zoom);
   var current = null;
@@ -258,6 +261,15 @@
     svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
   }
 
+  function setMapZoom(k) {
+    var w = svg.node().clientWidth, h = svg.node().clientHeight;
+    var t = d3.zoomTransform(svg.node());
+    var cx = w / 2, cy = h / 2;
+    var tx = cx - ((cx - t.x) / t.k) * k;
+    var ty = cy - ((cy - t.y) / t.k) * k;
+    svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+  }
+
   svg.on("dblclick.zoom", null);
   svg.on("dblclick", function () { fitToScreen(true); });
   svg.on("click", function (event) {
@@ -274,6 +286,7 @@
   window.renderMapJson = renderMapJson;
   window.focusMapRoot = focusRoot;
   window.fitMap = fitToScreen;
+  window.setMapZoom = setMapZoom;
 
   // Tell native the page is ready.
   if (window.arkBridge && window.arkBridge.onReady) {

@@ -68,13 +68,15 @@ class MapBridge {
   private ready: () => void;
   private blank: () => void;
   private open: (noteId: string) => void;
+  private zoom: (value: number) => void;
 
   constructor(tap: (noteId: string) => void, ready: () => void, blank: () => void,
-    open: (noteId: string) => void) {
+    open: (noteId: string) => void, zoom: (value: number) => void) {
     this.tap = tap;
     this.ready = ready;
     this.blank = blank;
     this.open = open;
+    this.zoom = zoom;
   }
 
   onNoteTap(noteId: string): void {
@@ -92,6 +94,10 @@ class MapBridge {
   onReady(): void {
     this.ready();
   }
+
+  onZoomChanged(value: number): void {
+    this.zoom(value);
+  }
 }
 
 /**
@@ -108,6 +114,7 @@ export struct NoteMapView {
   @State private loading: boolean = true;
   @State private message: string = '';
   @State private nodeCount: number = 0;
+  @State private zoomLevel: number = 100;
   @State private sheet: WebNoteInfo | null = null;
 
   private controller: webview.WebviewController = new webview.WebviewController();
@@ -124,6 +131,11 @@ export struct NoteMapView {
     this.closeSheet();
   }, (noteId: string) => {
     this.onOpenNote(noteId);
+  }, (value: number) => {
+    const percent: number = Math.round(value * 100);
+    if (Math.abs(percent - this.zoomLevel) > 1) {
+      this.zoomLevel = percent;
+    }
   });
 
   aboutToAppear(): void {
@@ -335,28 +347,50 @@ export struct NoteMapView {
       rich.nodes = this.payload.nodes;
       rich.links = this.payload.links.filter((link: WebMapLink) => link.kind === 'parent');
     } else {
-      // Link map is an ego graph around the currently selected note. Only its
-      // direct parent/children and relation/body targets are included; pulling
-      // in the whole note tree here is what produced long, unrelated lines.
+      // Mirrors TriliumNext's link map: nodes are the selected note's subtree,
+      // edges are relations/internal links only (never parent edges), and
+      // descendants without any relation are hidden. The selected note itself
+      // is always kept, even when it has no relations.
       const focus: string = this.selectedNoteId.length > 0 ? this.selectedNoteId : 'root';
-      const ids: Set<string> = new Set();
-      ids.add(focus);
+      const subtree: Set<string> = new Set();
+      subtree.add(focus);
+      let frontier: string[] = [focus];
+      while (frontier.length > 0) {
+        const next: string[] = [];
+        for (let f = 0; f < frontier.length; f++) {
+          const parentId: string = frontier[f];
+          for (let i = 0; i < this.payload.links.length; i++) {
+            const edge: WebMapLink = this.payload.links[i];
+            if (edge.kind === 'parent' && edge.source === parentId && !subtree.has(edge.target)) {
+              subtree.add(edge.target);
+              next.push(edge.target);
+            }
+          }
+        }
+        frontier = next;
+      }
+
       const activeLinks: WebMapLink[] = [];
+      const linkedIds: Set<string> = new Set();
       const seen: Set<string> = new Set();
       for (let i = 0; i < this.payload.links.length; i++) {
         const link: WebMapLink = this.payload.links[i];
-        if (link.source !== focus && link.target !== focus) {
+        if (link.kind === 'parent' || !subtree.has(link.source) || !subtree.has(link.target)) {
           continue;
         }
-        const key: string = `${link.kind}|${link.source}|${link.target}`;
+        const key: string = `${link.source}|${link.target}`;
         if (seen.has(key)) continue;
         seen.add(key);
         activeLinks.push(link);
-        ids.add(link.source);
-        ids.add(link.target);
+        linkedIds.add(link.source);
+        linkedIds.add(link.target);
       }
       rich.links = activeLinks;
-      rich.nodes = this.payload.nodes.filter((node: WebMapNode) => ids.has(node.id));
+      rich.nodes = this.payload.nodes.filter((node: WebMapNode) =>
+        subtree.has(node.id) && (node.id === focus || linkedIds.has(node.id)));
+      if (rich.nodes.length === 0) {
+        rich.nodes = this.payload.nodes.filter((node: WebMapNode) => node.id === focus);
+      }
     }
     rich.dark = AppStorage.get<number>('colorMode') === 0;
     this.nodeCount = rich.nodes.length;
@@ -492,7 +526,7 @@ export struct NoteMapView {
           .javaScriptProxy({
             object: this.bridge,
             name: 'arkBridge',
-            methodList: ['onNoteTap', 'onReady', 'onBlankTap', 'onOpenTap'],
+            methodList: ['onNoteTap', 'onReady', 'onBlankTap', 'onOpenTap', 'onZoomChanged'],
             controller: this.controller
           })
           .onPageEnd(() => {
@@ -510,6 +544,36 @@ export struct NoteMapView {
         .borderRadius(12)
         .backgroundColor($r('app.color.bg_primary'))
         .opacity(0.92)
+
+        Row({ space: 6 }) {
+          Text('−')
+            .fontSize(15)
+            .fontColor($r('app.color.text_secondary'))
+          Slider({
+            value: this.zoomLevel,
+            min: 15,
+            max: 300,
+            step: 5,
+            style: SliderStyle.OutSet
+          })
+            .width(110)
+            .trackThickness(3)
+            .selectedColor($r('app.color.primary'))
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.zoomLevel = value;
+              this.controller.runJavaScript(`setMapZoom(${(value / 100).toFixed(2)});`);
+            })
+          Text('+')
+            .fontSize(15)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .height(36)
+        .padding({ left: 10, right: 10 })
+        .borderRadius(18)
+        .backgroundColor($r('app.color.bg_surface'))
+        .opacity(0.94)
+        .position({ x: 12, y: '86%' })
+        .zIndex(20)
 
         if (this.loading) {
           Column({ space: 10 }) {
