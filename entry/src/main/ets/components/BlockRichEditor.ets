@@ -21,9 +21,26 @@ export struct BlockRichEditor {
   private loaded: boolean = false;
   private committed: boolean = false;
   private originalText: string = '';
+  @State private boldActive: boolean = false;
+  @State private italicActive: boolean = false;
+  @State private strikeActive: boolean = false;
+  @State private h1Active: boolean = false;
+  @State private h2Active: boolean = false;
+  private collapsedStyleUpdate: boolean = false;
+  private lastStyleOffset: number = -1;
 
   aboutToAppear(): void {
     this.originalText = this.textOf(this.segments);
+    let allBold: boolean = this.segments.length > 0;
+    let allItalic: boolean = this.segments.length > 0;
+    for (let i = 0; i < this.segments.length; i++) {
+      allBold = allBold && this.segments[i].bold;
+      allItalic = allItalic && this.segments[i].italic;
+    }
+    this.boldActive = allBold;
+    this.italicActive = allItalic;
+    this.h1Active = this.heading && this.fontSize >= 26;
+    this.h2Active = this.heading && this.fontSize >= 22 && this.fontSize < 26;
   }
 
   private onCommitTick(): void {
@@ -38,6 +55,253 @@ export struct BlockRichEditor {
       text += segments[i].text;
     }
     return text;
+  }
+
+  private textSpansOf(spans: Array<RichEditorTextSpanResult | RichEditorImageSpanResult>):
+    RichEditorTextSpanResult[] {
+    const result: RichEditorTextSpanResult[] = [];
+    for (let i = 0; i < spans.length; i++) {
+      const span = spans[i] as RichEditorTextSpanResult;
+      if (span.textStyle !== undefined) {
+        result.push(span);
+      }
+    }
+    return result;
+  }
+
+  private refreshToolbarState(): void {
+    if (!this.loaded || this.collapsedStyleUpdate) {
+      return;
+    }
+    try {
+      const selection = this.controller.getSelection();
+      const start: number = selection.selection[0];
+      const end: number = selection.selection[1];
+      // Keep the last toolbar action stable for a collapsed caret. Refreshing
+      // from spans here would immediately undo the button state because some
+      // RichEditor builds only expose updated span styles after a text change.
+      if (start === end) {
+        return;
+      }
+      let spans = this.textSpansOf(selection.spans);
+      let bold: boolean = spans.length > 0;
+      let italic: boolean = spans.length > 0;
+      let strike: boolean = false;
+      let maxFont: number = 0;
+      for (let i = 0; i < spans.length; i++) {
+        const style = spans[i].textStyle;
+        bold = bold && this.isBold(style);
+        italic = italic && style.fontStyle === FontStyle.Italic;
+        strike = strike || this.isStrike(style);
+        const fontSize = style.fontSize;
+        if (typeof fontSize === 'number') {
+          maxFont = Math.max(maxFont, fontSize);
+        }
+      }
+      if (start === end && spans.length === 0) {
+        const typing = this.controller.getTypingStyle();
+        bold = this.isBoldWeight(typing.fontWeight);
+        italic = typing.fontStyle === FontStyle.Italic;
+        if (typing.decoration !== undefined) {
+          strike = typing.decoration.type === TextDecorationType.LineThrough;
+        }
+        if (typeof typing.fontSize === 'number') {
+          maxFont = typing.fontSize;
+        }
+      }
+      this.boldActive = bold;
+      this.italicActive = italic;
+      this.strikeActive = strike;
+      this.h1Active = maxFont >= 26;
+      this.h2Active = maxFont >= 22 && maxFont < 26;
+    } catch (error) {
+      // The controller may be detached while the block is unmounting.
+    }
+  }
+
+  private isStrike(style: RichEditorTextStyleResult): boolean {
+    const decoration = style.decoration;
+    return decoration !== undefined && decoration.type === TextDecorationType.LineThrough;
+  }
+
+  private documentLength(): number {
+    let length: number = 0;
+    const spans = this.controller.getSpans();
+    for (let i = 0; i < spans.length; i++) {
+      const span = spans[i] as RichEditorTextSpanResult;
+      if (span.value !== undefined) {
+        length += span.value.length;
+      }
+    }
+    return length;
+  }
+
+  private applyTextStyle(style: RichEditorTextStyle): void {
+    try {
+      const selection = this.controller.getSelection();
+      const start: number = selection.selection[0];
+      const end: number = selection.selection[1];
+      if (start === end) {
+        const rangeStart: number = 0;
+        const rangeEnd: number = this.documentLength();
+        if (rangeEnd > rangeStart) {
+          this.collapsedStyleUpdate = true;
+          this.lastStyleOffset = start;
+          this.controller.updateSpanStyle({
+            start: rangeStart,
+            end: rangeEnd,
+            textStyle: style
+          });
+          this.controller.setSelection(start, end);
+          return;
+        }
+        const typing = this.controller.getTypingStyle();
+        if (style.fontWeight !== undefined) {
+          typing.fontWeight = style.fontWeight;
+        }
+        if (style.fontStyle !== undefined) {
+          typing.fontStyle = style.fontStyle;
+        }
+        if (style.decoration !== undefined) {
+          typing.decoration = style.decoration;
+        }
+        this.controller.setTypingStyle(typing);
+      } else {
+        this.controller.updateSpanStyle({
+          start: start,
+          end: end,
+          textStyle: style
+        });
+        this.controller.setSelection(start, end);
+      }
+      this.refreshToolbarState();
+    } catch (error) {
+      // Ignore stale controller state.
+    }
+  }
+
+  private toggleBold(): void {
+    this.boldActive = !this.boldActive;
+    this.applyTextStyle({ fontWeight: this.boldActive ? 700 : 400 });
+  }
+
+  private toggleItalic(): void {
+    this.italicActive = !this.italicActive;
+    this.applyTextStyle({
+      fontStyle: this.italicActive ? FontStyle.Italic : FontStyle.Normal
+    });
+  }
+
+  private toggleStrike(): void {
+    this.strikeActive = !this.strikeActive;
+    this.applyTextStyle({
+      decoration: {
+        type: this.strikeActive ? TextDecorationType.LineThrough : TextDecorationType.None
+      }
+    });
+  }
+
+  private applyHeading(size: number, lineHeight: number): void {
+    try {
+      const selection = this.controller.getSelection();
+      const rangeStart: number = 0;
+      const rangeEnd: number = this.documentLength();
+      if (rangeEnd <= rangeStart) {
+        return;
+      }
+      this.controller.updateSpanStyle({
+        start: rangeStart,
+        end: rangeEnd,
+        textStyle: {
+          fontSize: size,
+          lineHeight: lineHeight
+        }
+      });
+      this.controller.setSelection(selection.selection[0], selection.selection[1]);
+      this.h1Active = size >= 26;
+      this.h2Active = size >= 22 && size < 26;
+    } catch (error) {
+      // Ignore stale ranges.
+    }
+  }
+
+  @Builder
+  private FormatToolbar() {
+    Scroll() {
+      Row({ space: 4 }) {
+        Text('B')
+          .fontSize(14)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.boldActive ? '#6cb6ff' : $r('app.color.text_secondary'))
+          .width(38)
+          .height(34)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .backgroundColor(this.boldActive ? '#1f3b5c' : $r('app.color.bg_secondary'))
+          .focusable(false)
+          .onClick(() => {
+            this.toggleBold();
+          })
+        Text('I')
+          .fontSize(14)
+          .fontStyle(FontStyle.Italic)
+          .fontColor(this.italicActive ? '#6cb6ff' : $r('app.color.text_secondary'))
+          .width(38)
+          .height(34)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .backgroundColor(this.italicActive ? '#1f3b5c' : $r('app.color.bg_secondary'))
+          .focusable(false)
+          .onClick(() => {
+            this.toggleItalic();
+          })
+        Text('S')
+          .fontSize(14)
+          .decoration({ type: TextDecorationType.LineThrough })
+          .fontColor(this.strikeActive ? '#6cb6ff' : $r('app.color.text_secondary'))
+          .width(38)
+          .height(34)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .backgroundColor(this.strikeActive ? '#1f3b5c' : $r('app.color.bg_secondary'))
+          .focusable(false)
+          .onClick(() => {
+            this.toggleStrike();
+          })
+        Text('H1')
+          .fontSize(14)
+          .fontColor(this.h1Active ? '#6cb6ff' : $r('app.color.text_secondary'))
+          .width(38)
+          .height(34)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .backgroundColor(this.h1Active ? '#1f3b5c' : $r('app.color.bg_secondary'))
+          .focusable(false)
+          .onClick(() => {
+            this.applyHeading(28, 38);
+          })
+        Text('H2')
+          .fontSize(14)
+          .fontColor(this.h2Active ? '#6cb6ff' : $r('app.color.text_secondary'))
+          .width(38)
+          .height(34)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .backgroundColor(this.h2Active ? '#1f3b5c' : $r('app.color.bg_secondary'))
+          .focusable(false)
+          .onClick(() => {
+            this.applyHeading(23, 32);
+          })
+      }
+      .height(40)
+      .padding({ left: 2, right: 2 })
+      .focusable(false)
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .width('100%')
+    .height(40)
+    .focusable(false)
   }
 
   private loadSpans(): void {
@@ -91,9 +355,14 @@ export struct BlockRichEditor {
   }
 
   private isBold(style: RichEditorTextStyleResult): boolean {
-    const weight = style.fontWeight;
+    return this.isBoldWeight(style.fontWeight);
+  }
+
+  private isBoldWeight(weight: number | FontWeight | string | undefined): boolean {
     if (typeof weight === 'number') {
-      return weight >= 4;
+      // RichEditorTextStyleResult normalizes FontWeight to numeric values:
+      // 400 = normal, 500 = medium, 600 = semibold, 700 = bold.
+      return weight >= 600;
     }
     if (typeof weight === 'string') {
       return weight === 'bold' || weight === '600' || weight === '700' || weight === '800';
@@ -188,29 +457,44 @@ export struct BlockRichEditor {
   }
 
   build() {
-    RichEditor({ controller: this.controller })
-      .id('block-rich-editor')
-      .width('100%')
-      .constraintSize({
-        minHeight: this.lineHeight + 10,
-        maxHeight: 420
-      })
-      .backgroundColor(Color.Transparent)
-      .border({ width: 1, color: $r('app.color.primary'), radius: 6 })
-      .padding({ top: 4, bottom: 4, left: 2, right: 2 })
-      .onReady(() => {
-        this.loadSpans();
-      })
-      .onFocus(() => {
-        this.onEditorFocus();
-      })
-      .onBlur(() => {
-        this.commit();
-      })
-      .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number) => {
-        if (this.loaded && !isVisible) {
+    Column({ space: 4 }) {
+      this.FormatToolbar()
+
+      RichEditor({ controller: this.controller })
+        .id('block-rich-editor')
+        .width('100%')
+        .constraintSize({
+          minHeight: this.lineHeight + 10,
+          maxHeight: 420
+        })
+        .backgroundColor(Color.Transparent)
+        .border({ width: 1, color: $r('app.color.primary'), radius: 6 })
+        .padding({ top: 4, bottom: 4, left: 2, right: 2 })
+        .onReady(() => {
+          this.loadSpans();
+        })
+        .onFocus(() => {
+          this.onEditorFocus();
+        })
+        .onSelectionChange((range: RichEditorRange) => {
+          if (range.start !== range.end || range.start !== this.lastStyleOffset) {
+            this.collapsedStyleUpdate = false;
+          }
+          this.refreshToolbarState();
+        })
+        .onDidChange(() => {
+          this.refreshToolbarState();
+        })
+        .onBlur(() => {
           this.commit();
-        }
-      })
+        })
+        .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number) => {
+          if (this.loaded && !isVisible) {
+            this.commit();
+          }
+        })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 }
