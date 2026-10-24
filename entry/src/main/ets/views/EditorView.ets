@@ -1444,15 +1444,24 @@ export struct EditorView {
     if (active === null) {
       return;
     }
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (context === null) {
+      return;
+    }
+    const url: string = `/etapi/notes/${encodeURIComponent(note.noteId)}/content`;
     try {
-      const binary = await EtapiService.fetchUrlBinary(active,
-        `/etapi/notes/${encodeURIComponent(note.noteId)}/content`);
-      const base64: string = new util.Base64Helper().encodeToStringSync(
-        new Uint8Array(binary.data));
-      const mime: string = note.mime.length > 0 ? note.mime : binary.mime;
+      const key: string = ImageDiskCache.keyForSync(active.serverUrl, url);
+      let buffer: ArrayBuffer | null = await ImageDiskCache.readBuffer(context, key);
+      if (buffer === null) {
+        buffer = (await EtapiService.fetchUrlBinary(active, url)).data;
+        await ImageDiskCache.write(context, key, buffer);
+      }
       if (note.type === 'image') {
-        this.webMediaHtml = `<p><img src="data:${mime};base64,${base64}" alt=""></p>`;
+        this.webMediaHtml = `<p><img src="${url}" alt=""></p>`;
       } else {
+        const mime: string = note.mime.length > 0 ? note.mime : 'application/octet-stream';
+        const base64: string = new util.Base64Helper().encodeToStringSync(
+          new Uint8Array(buffer));
         const name: string = note.title.replace(/"/g, '&quot;');
         this.webMediaHtml = `<p><a href="data:${mime};base64,${base64}" download="${name}">` +
           `下载 ${name}</a></p>`;
@@ -1491,16 +1500,11 @@ export struct EditorView {
         }
         const key: string = await ImageDiskCache.keyFor(active.serverUrl, src);
         let data: ArrayBuffer | null = await ImageDiskCache.readBuffer(context, key);
-        let mime: string = 'image/jpeg';
         if (data === null) {
           const binary = await EtapiService.fetchUrlBinary(active, src);
           data = binary.data;
-          mime = binary.mime;
           await ImageDiskCache.write(context, key, data);
         }
-        const base64: string = new util.Base64Helper().encodeToStringSync(
-          new Uint8Array(data));
-        html = html.split(src).join(`data:${mime};base64,${base64}`);
       } catch (error) {
         console.error(`WEB_IMAGE_FAILED ${src}`);
       }
@@ -4083,6 +4087,10 @@ export struct EditorView {
                     saveTick: this.webSaveTick,
                     onJson: (json: string) => {
                       this.onWebSheetJson(json);
+                    },
+                    onAlert: (message: string) => {
+                      this.webEditing = false;
+                      this.notify(message);
                     }
                   })
                   .width('100%')

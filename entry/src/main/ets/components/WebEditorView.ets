@@ -1,5 +1,7 @@
 import { webview } from '@kit.ArkWeb';
+import { common } from '@kit.AbilityKit';
 import { StateKeys } from '../constants/StateKeys';
+import { ImageDiskCache } from '../services/ImageDiskCache';
 
 class EditorBridge {
   onHtml: (html: string) => void = () => {};
@@ -100,6 +102,39 @@ export struct WebEditorView {
     this.controller.runJavaScript('window.NativeEditor.flush()');
   }
 
+  private interceptImage(url: string): WebResourceResponse | null {
+    if (url.indexOf('/etapi/attachments/') < 0 && url.indexOf('/etapi/images/') < 0 &&
+      url.indexOf('/api/attachments/') < 0 && url.indexOf('/etapi/notes/') < 0) {
+      return null;
+    }
+    const context: common.UIAbilityContext | null =
+      this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (context === null) {
+      return null;
+    }
+    const serverUrl = AppStorage.get<string>('auth.serverUrl');
+    const key: string = ImageDiskCache.keyForSync(serverUrl ?? '', url);
+    const buffer: ArrayBuffer | null = ImageDiskCache.readBufferSync(context, key);
+    if (buffer === null) {
+      return null;
+    }
+    let mime: string = 'image/jpeg';
+    const lower: string = url.toLowerCase();
+    if (lower.indexOf('.png') >= 0) {
+      mime = 'image/png';
+    } else if (lower.indexOf('.gif') >= 0) {
+      mime = 'image/gif';
+    } else if (lower.indexOf('.webp') >= 0) {
+      mime = 'image/webp';
+    }
+    const response: WebResourceResponse = new WebResourceResponse();
+    response.setResponseData(buffer);
+    response.setResponseMimeType(mime);
+    response.setResponseEncoding('binary');
+    response.setResponseCode(200);
+    return response;
+  }
+
   build() {
     Web({ src: $rawfile('editor.html'), controller: this.controller })
       .width('100%')
@@ -120,6 +155,9 @@ export struct WebEditorView {
       .onPageEnd(() => {
         this.pageReady = true;
         this.injectAll();
+      })
+      .onInterceptRequest((event) => {
+        return this.interceptImage(event.request.getRequestUrl());
       })
       .onErrorReceive((event) => {
         if (event && event.error) {

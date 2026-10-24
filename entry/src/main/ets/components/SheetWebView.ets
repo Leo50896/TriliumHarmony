@@ -3,6 +3,7 @@ import { webview } from '@kit.ArkWeb';
 class SheetBridge {
   onReady: () => void = () => {};
   onJson: (json: string) => void = () => {};
+  onAlert: (message: string) => void = () => {};
 
   ready(value: string): void {
     if (value.length > 0) {
@@ -15,6 +16,10 @@ class SheetBridge {
       this.onJson(value);
     }
   }
+
+  showAlert(message: string): void {
+    this.onAlert(message);
+  }
 }
 
 @Component
@@ -23,6 +28,7 @@ export struct SheetWebView {
   @Prop @Watch('onReadOnlyChanged') readOnly: boolean = true;
   @Prop @Watch('onSaveTick') saveTick: number = 0;
   onJson: (json: string) => void = () => {};
+  onAlert: (message: string) => void = () => {};
   @State private ready: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: SheetBridge = new SheetBridge();
@@ -33,6 +39,9 @@ export struct SheetWebView {
     };
     this.bridge.onJson = (json: string) => {
       this.onJson(json);
+    };
+    this.bridge.onAlert = (message: string) => {
+      this.onAlert(message);
     };
   }
 
@@ -79,7 +88,7 @@ export struct SheetWebView {
         .javaScriptProxy({
           object: this.bridge,
           name: 'NativeSheetBridge',
-          methodList: ['ready', 'json'],
+          methodList: ['ready', 'json', 'showAlert'],
           controller: this.controller
         })
         .onPageEnd(() => {
