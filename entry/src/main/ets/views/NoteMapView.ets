@@ -371,8 +371,7 @@ export struct NoteMapView {
     this.nodeCount = rich.nodes.length;
     const json: string = JSON.stringify(rich);
     const encoded: string = JSON.stringify(json);
-    const focus: string = this.layoutMode === 'tree' ? 'focusMapRoot();' : 'fitMap(true);';
-    this.controller.runJavaScript(`renderMapJson(${encoded}); ${focus}`);
+    this.controller.runJavaScript(`renderMapJson(${encoded}); focusMapRoot();`);
   }
 
   private setMode(mode: string): void {

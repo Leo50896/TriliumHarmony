@@ -131,6 +131,9 @@
     var node = nodeLayer.selectAll("g").data(nodes).enter().append("g")
       .style("cursor", "pointer")
       .on("click", function (event, d) {
+        if (event.defaultPrevented) {
+          return;
+        }
         event.stopPropagation();
         selected = d.id;
         updateSelection();
@@ -139,6 +142,22 @@
         }
         positionOpenButton();
       });
+
+    node.call(d3.drag()
+      .on("start", function (event, d) {
+        if (!event.active) simulation.alphaTarget(0.25).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on("drag", function (event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on("end", function (event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      }));
 
     node.append("circle")
       .attr("r", function (d) { return d.folder ? 9 : 3; })
@@ -166,6 +185,8 @@
     });
 
     simulation.on("end", function () {
+      // The tree map starts from its root; the link map has no single centre
+      // and fits the whole relation graph so its clusters are visible.
       if (current && current.mode === "link") {
         fitToScreen(false);
       } else {
