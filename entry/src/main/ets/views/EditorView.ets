@@ -1344,8 +1344,10 @@ export struct EditorView {
   }
 
   private isWebTextMode(): boolean {
-    return this.note !== null && this.note.type === 'text' && !this.note.isProtected &&
-      !this.isPdf && !this.isSpreadsheet && !this.markdownPreview;
+    return this.note !== null &&
+      (this.note.type === 'text' || this.note.type === 'book') &&
+      !this.note.isProtected && !this.isPdf && !this.isSpreadsheet &&
+      !this.markdownPreview;
   }
 
   private toggleWebEdit(): void {
