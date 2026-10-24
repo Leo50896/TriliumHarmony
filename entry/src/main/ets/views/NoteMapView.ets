@@ -45,6 +45,7 @@ class WebMapPayload {
   nodes: WebMapNode[] = [];
   links: WebMapLink[] = [];
   dark: boolean = true;
+  mode: string = 'tree';
 }
 
 class WebNoteInfo {
@@ -347,52 +348,26 @@ export struct NoteMapView {
       rich.nodes = this.payload.nodes;
       rich.links = this.payload.links.filter((link: WebMapLink) => link.kind === 'parent');
     } else {
-      // Mirrors TriliumNext's link map: nodes are the selected note's subtree,
-      // edges are relations/internal links only (never parent edges), and
-      // descendants without any relation are hidden. The selected note itself
-      // is always kept, even when it has no relations.
-      const focus: string = this.selectedNoteId.length > 0 ? this.selectedNoteId : 'root';
-      const subtree: Set<string> = new Set();
-      subtree.add(focus);
-      let frontier: string[] = [focus];
-      while (frontier.length > 0) {
-        const next: string[] = [];
-        for (let f = 0; f < frontier.length; f++) {
-          const parentId: string = frontier[f];
-          for (let i = 0; i < this.payload.links.length; i++) {
-            const edge: WebMapLink = this.payload.links[i];
-            if (edge.kind === 'parent' && edge.source === parentId && !subtree.has(edge.target)) {
-              subtree.add(edge.target);
-              next.push(edge.target);
-            }
-          }
-        }
-        frontier = next;
-      }
-
+      // Mirrors a Trilium note-map note in link mode: all notes of the pulled
+      // map are present, but the edges are relations/internal links only.
+      // Parent edges belong to the tree map and must not be drawn here.
       const activeLinks: WebMapLink[] = [];
-      const linkedIds: Set<string> = new Set();
       const seen: Set<string> = new Set();
       for (let i = 0; i < this.payload.links.length; i++) {
         const link: WebMapLink = this.payload.links[i];
-        if (link.kind === 'parent' || !subtree.has(link.source) || !subtree.has(link.target)) {
+        if (link.kind === 'parent') {
           continue;
         }
         const key: string = `${link.source}|${link.target}`;
         if (seen.has(key)) continue;
         seen.add(key);
         activeLinks.push(link);
-        linkedIds.add(link.source);
-        linkedIds.add(link.target);
       }
       rich.links = activeLinks;
-      rich.nodes = this.payload.nodes.filter((node: WebMapNode) =>
-        subtree.has(node.id) && (node.id === focus || linkedIds.has(node.id)));
-      if (rich.nodes.length === 0) {
-        rich.nodes = this.payload.nodes.filter((node: WebMapNode) => node.id === focus);
-      }
+      rich.nodes = this.payload.nodes;
     }
     rich.dark = AppStorage.get<number>('colorMode') === 0;
+    rich.mode = this.layoutMode;
     this.nodeCount = rich.nodes.length;
     const json: string = JSON.stringify(rich);
     const encoded: string = JSON.stringify(json);

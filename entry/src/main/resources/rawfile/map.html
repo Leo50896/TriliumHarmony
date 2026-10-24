@@ -152,7 +152,11 @@
     });
 
     simulation.on("end", function () {
-      focusRoot();
+      if (current && current.mode === "link") {
+        fitToScreen(false);
+      } else {
+        focusRoot();
+      }
       drawLabels(0.9);
     });
 
