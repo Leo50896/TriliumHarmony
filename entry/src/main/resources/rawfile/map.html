@@ -36,6 +36,19 @@
   var linkLayer = root.append("g");
   var nodeLayer = root.append("g");
   var labelLayer = root.append("g");
+
+  var defs = svg.append("defs");
+  var arrow = defs.append("marker")
+    .attr("id", "map-arrow")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 10)
+    .attr("refY", 0)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto");
+  arrow.append("path")
+    .attr("d", "M0,-4L9,0L0,4")
+    .attr("fill", "#8a93a3");
   var zoom = d3.zoom().scaleExtent([0.15, 7]).on("zoom", function (event) {
     root.attr("transform", event.transform);
     drawLabels(event.transform.k);
@@ -100,19 +113,23 @@
     var byId = {};
     nodes.forEach(function (n) { byId[n.id] = n; });
 
+    var nodeLinkRatio = nodes.length / Math.max(1, links.length);
+    var charge = Math.min(-3, -20 / Math.pow(nodeLinkRatio, 1.5));
+
     simulation = d3.forceSimulation(nodes)
       .force("link", d3.forceLink(links).id(function (d) { return d.id; })
-        .distance(function (l) { return l.kind === "parent" ? 120 : 220; })
-        .strength(function (l) { return l.kind === "parent" ? 0.7 : 0.15; }))
-      .force("charge", d3.forceManyBody().strength(-420).distanceMax(1800))
-      .force("center", d3.forceCenter(0, 0).strength(0.03))
+        .distance(function (l) { return l.kind === "parent" ? 120 : 170; })
+        .strength(function (l) { return l.kind === "parent" ? 0.7 : 0.22; }))
+      .force("charge", d3.forceManyBody().strength(charge).distanceMax(1000))
+      .force("center", d3.forceCenter(0, 0).strength(0.2))
       .force("collide", d3.forceCollide().radius(function (d) { return (d.folder ? 14 : 5); }).iterations(2));
 
     var link = linkLayer.selectAll("line").data(links).enter().append("line")
-      .attr("stroke", theme.dark ? "#999999" : "#333333")
+      .attr("stroke", theme.dark ? "#9aa3b2" : "#5f6368")
       .attr("stroke-width", 1)
-      .attr("stroke-opacity", 0.18)
-      .attr("stroke-dasharray", function (l) { return l.kind === "relation" || l.kind === "body" ? "4 4" : "none"; });
+      .attr("stroke-opacity", 0.42)
+      .attr("marker-end", "url(#map-arrow)")
+      .attr("stroke-dasharray", "none");
 
     var node = nodeLayer.selectAll("g").data(nodes).enter().append("g")
       .style("cursor", "pointer")
@@ -153,7 +170,7 @@
 
     simulation.on("end", function () {
       if (current && current.mode === "link") {
-        fitToScreen(false);
+        fitLinked();
       } else {
         focusRoot();
       }
@@ -234,6 +251,34 @@
         var active = selected && (l.source.id === selected || l.target.id === selected);
         return active ? 2 : 1;
       });
+  }
+
+  function fitLinked() {
+    var ids = {};
+    var links = window.mapLinks || [];
+    links.forEach(function (l) {
+      var s = typeof l.source === "object" ? l.source.id : l.source;
+      var t = typeof l.target === "object" ? l.target.id : l.target;
+      ids[s] = true;
+      ids[t] = true;
+    });
+    var linked = (window.mapNodes || []).filter(function (n) { return ids[n.id]; });
+    if (linked.length < 2) {
+      fitToScreen(false);
+      return;
+    }
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    linked.forEach(function (n) {
+      minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+    });
+    var w = svg.node().clientWidth, h = svg.node().clientHeight;
+    var pad = 90;
+    var k = Math.min((w - pad * 2) / Math.max(1, maxX - minX),
+      (h - pad * 2) / Math.max(1, maxY - minY), 2);
+    var tx = (w - (minX + maxX) * k) / 2;
+    var ty = (h - (minY + maxY) * k) / 2;
+    svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
   }
 
   function fitToScreen(animate) {

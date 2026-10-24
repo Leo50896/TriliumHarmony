@@ -547,7 +547,7 @@ export struct NoteMapView {
         .borderRadius(18)
         .backgroundColor($r('app.color.bg_surface'))
         .opacity(0.94)
-        .position({ x: 12, y: '86%' })
+        .position({ x: 8, y: '91%' })
         .zIndex(20)
 
         if (this.loading) {
