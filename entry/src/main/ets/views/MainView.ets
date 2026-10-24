@@ -183,7 +183,7 @@ export struct MainView {
               this.goBack();
             },
             onOpenNote: (noteId: string) => {
-              this.viewHistory = [];
+              this.viewHistory.push('notemap');
               this.suppressNoteHistory = true;
               AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, noteId);
               AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_TITLE, '');
