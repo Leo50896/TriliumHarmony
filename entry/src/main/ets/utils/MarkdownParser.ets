@@ -74,6 +74,32 @@ export class MarkdownParser {
         continue;
       }
 
+      if (i + 1 < lines.length && line.indexOf('|') >= 0 &&
+        MarkdownParser.isTableSeparator(lines[i + 1])) {
+        flushParagraph();
+        flushList();
+        flushQuote();
+        const headers: string[] = MarkdownParser.splitCells(line);
+        const rows: string[][] = [];
+        i++;
+        while (i + 1 < lines.length && lines[i + 1].trim().length > 0 &&
+          lines[i + 1].indexOf('|') >= 0) {
+          i++;
+          rows.push(MarkdownParser.splitCells(lines[i]));
+        }
+        const headerHtml: string = headers.map((cell: string): string =>
+          `<th>${MarkdownParser.inline(cell)}</th>`).join('');
+        let bodyHtml: string = '';
+        for (let r = 0; r < rows.length; r++) {
+          const cells: string[] = rows[r];
+          bodyHtml += '<tr>' + cells.map((cell: string): string =>
+            `<td>${MarkdownParser.inline(cell)}</td>`).join('') + '</tr>';
+        }
+        out.push(`<table><thead><tr>${headerHtml}</tr></thead>` +
+          `<tbody>${bodyHtml}</tbody></table>`);
+        continue;
+      }
+
       const heading: RegExpMatchArray | null = line.match(/^(#{1,6})\s+(.*)$/);
       if (heading !== null) {
         flushParagraph();
@@ -138,6 +164,33 @@ export class MarkdownParser {
     flushList();
     flushQuote();
     return out.join('\n');
+  }
+
+  private static splitCells(line: string): string[] {
+    let value: string = line.trim();
+    if (value.startsWith('|')) {
+      value = value.substring(1);
+    }
+    if (value.endsWith('|')) {
+      value = value.substring(0, value.length - 1);
+    }
+    return value.split('|').map((cell: string): string => cell.trim());
+  }
+
+  private static isTableSeparator(line: string): boolean {
+    if (line.indexOf('-') < 0 || line.indexOf('|') < 0) {
+      return false;
+    }
+    const cells: string[] = MarkdownParser.splitCells(line);
+    if (cells.length < 2) {
+      return false;
+    }
+    for (let i = 0; i < cells.length; i++) {
+      if (!/^:?-{3,}:?$/.test(cells[i])) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static inline(text: string): string {
