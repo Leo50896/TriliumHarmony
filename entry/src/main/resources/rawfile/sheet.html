@@ -22,6 +22,33 @@
     var created = false;
     var workbook = {};
     var sheetId = '';
+    var rawJson = '';
+    var readOnly = true;
+    var stylesMap = {};
+    function pad(value) { return value < 10 ? '0' + value : '' + value; }
+    function excelDate(serial, pattern) {
+      var date = new Date(Math.round((serial - 25569) * 86400000));
+      return pattern
+        .replace(/yyyy/g, '' + date.getUTCFullYear())
+        .replace(/MM/g, pad(date.getUTCMonth() + 1))
+        .replace(/dd/g, pad(date.getUTCDate()))
+        .replace(/hh/g, pad(date.getUTCHours()))
+        .replace(/mm/g, pad(date.getUTCMinutes()))
+        .replace(/ss/g, pad(date.getUTCSeconds()));
+    }
+    function displayValue(cell) {
+      var style = cell.s;
+      if (typeof style === 'string') style = stylesMap[style] || {};
+      if (!style || typeof style !== 'object') style = {};
+      var pattern = style.n && style.n.pattern;
+      if (pattern && typeof cell.v === 'number' && /[yMdHhms]/.test(pattern)) {
+        return excelDate(cell.v, pattern);
+      }
+      if (cell.m !== undefined && cell.m !== null && String(cell.m).length > 0) {
+        return String(cell.m);
+      }
+      return cell.v !== undefined && cell.v !== null ? cell.v : '';
+    }
     function bridge(name, value) {
       try {
         if (window.NativeSheetBridge && typeof window.NativeSheetBridge[name] === 'function') {
@@ -35,10 +62,7 @@
       Object.keys(cellData).forEach(function (r) {
         Object.keys(cellData[r] || {}).forEach(function (c) {
           var cell = cellData[r][c] || {};
-          var rawValue = cell.v;
-          if (rawValue !== null && typeof rawValue === 'object') {
-            rawValue = cell.m !== undefined ? cell.m : '';
-          }
+          var rawValue = displayValue(cell);
           var item = { r: Number(r), c: Number(c),
             v: cell.m !== undefined ? String(cell.m) :
               (rawValue !== undefined && rawValue !== null ? rawValue : '') };
@@ -51,8 +75,10 @@
     }
     window.NativeSheet = {
       render: function (json) {
-        try { workbook = JSON.parse(json || '{}'); } catch (e) { workbook = {}; }
+        rawJson = json || '{}';
+        try { workbook = JSON.parse(rawJson); } catch (e) { workbook = {}; }
         var wb = workbook.workbook || workbook;
+        stylesMap = wb.styles || {};
         var sheetMap = wb.sheets || {};
         var order = wb.sheetOrder || Object.keys(sheetMap);
         sheetId = order.length > 0 ? order[0] : '';
@@ -77,7 +103,7 @@
           showtoolbar: false,
           showsheetbar: false,
           showstatisticBar: false,
-          allowEdit: false,
+          allowEdit: !readOnly,
           enableAddRow: false,
           enableAddBackTop: false,
           hook: {
@@ -91,10 +117,16 @@
           bridge('ready', 'ok');
         }, 1200);
       },
-      setReadOnly: function (readOnly) {
+      setReadOnly: function (value) {
+        if (readOnly === value) {
+          return;
+        }
+        readOnly = value;
         try {
-          if (window.luckysheet && luckysheet.setAllowEdit) {
-            luckysheet.setAllowEdit(!readOnly);
+          if (created && rawJson.length > 0) {
+            luckysheet.destroy();
+            created = false;
+            window.NativeSheet.render(rawJson);
           }
         } catch (e) {}
       },

@@ -12,12 +12,14 @@ class SheetBridge {
   }
 
   json(value: string): void {
+    console.info(`SHEET_JSON_BRIDGE len=${value.length}`);
     if (value.length > 0) {
       this.onJson(value);
     }
   }
 
   showAlert(message: string): void {
+    console.info(`SHEET_ALERT ${message}`);
     this.onAlert(message);
   }
 }

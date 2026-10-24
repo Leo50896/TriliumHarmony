@@ -1387,7 +1387,8 @@ export struct EditorView {
     if (context === null || this.note === null || json.length === 0) {
       return;
     }
-    this.spreadsheetContent = json;
+    // Do not assign back to spreadsheetContent: that would trigger another
+    // WebView render immediately after save and can leave Luckysheet stuck.
     try {
       await LocalStore.updateNoteContent(context, SessionStore.accountKey(),
         this.note.noteId, json);
