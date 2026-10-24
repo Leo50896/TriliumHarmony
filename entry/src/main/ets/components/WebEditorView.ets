@@ -134,6 +134,8 @@ export struct WebEditorView {
       mime = 'image/gif';
     } else if (lower.indexOf('.webp') >= 0) {
       mime = 'image/webp';
+    } else {
+      mime = this.mimeForBuffer(buffer);
     }
     const response: WebResourceResponse = new WebResourceResponse();
     response.setResponseData(buffer);
@@ -141,6 +143,27 @@ export struct WebEditorView {
     response.setResponseEncoding('binary');
     response.setResponseCode(200);
     return response;
+  }
+
+  private mimeForBuffer(buffer: ArrayBuffer): string {
+    const bytes: Uint8Array = new Uint8Array(buffer);
+    if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 &&
+      bytes[2] === 0x4e && bytes[3] === 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+      return 'image/jpeg';
+    }
+    if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 &&
+      bytes[2] === 0x46) {
+      return 'image/gif';
+    }
+    if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 &&
+      bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 &&
+      bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+      return 'image/webp';
+    }
+    return 'image/jpeg';
   }
 
   private async downloadAndReplace(url: string, context: common.UIAbilityContext,
@@ -158,7 +181,7 @@ export struct WebEditorView {
       await ImageDiskCache.write(context, key, binary.data);
       const base64: string = new util.Base64Helper().encodeToStringSync(
         new Uint8Array(binary.data));
-      const dataUri: string = `data:${binary.mime};base64,${base64}`;
+      const dataUri: string = `data:${this.mimeForBuffer(binary.data)};base64,${base64}`;
       const src: string = this.scriptString(url);
       const data: string = this.scriptString(dataUri);
       this.controller.runJavaScript(

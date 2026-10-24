@@ -44,7 +44,7 @@ export class ImageDiskCache {
   }
 
   static keyForSync(serverUrl: string, src: string): string {
-    return ImageDiskCache.fallbackHash(`${serverUrl}|${src}`);
+    return ImageDiskCache.fallbackHash(`v2|${serverUrl}|${src}`);
   }
 
   static async keyFor(serverUrl: string, src: string): Promise<string> {
