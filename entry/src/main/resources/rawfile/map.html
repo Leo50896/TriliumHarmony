@@ -22,6 +22,9 @@
     line-height: 28px;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     white-space: nowrap;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
 <script src="d3.min.js"></script>
@@ -100,15 +103,18 @@
       openBtn.style.display = "none";
       return;
     }
-    var left = x - 30;
-    if (left + 90 > window.innerWidth) left = x - 90;
+    openBtn.textContent = n.title || "打开笔记";
+    openBtn.title = n.title || "";
+    openBtn.setAttribute("data-note-id", selected);
+    openBtn.style.display = "block";
+    var buttonWidth = openBtn.offsetWidth || 90;
+    var left = x - buttonWidth / 2;
+    if (left + buttonWidth > window.innerWidth - 6) left = window.innerWidth - buttonWidth - 6;
     if (left < 6) left = 6;
     var top = y - 44;
     if (top < 6) top = y + 18;
     openBtn.style.left = left + "px";
     openBtn.style.top = top + "px";
-    openBtn.style.display = "block";
-    openBtn.setAttribute("data-note-id", selected);
   }
 
   openBtn.addEventListener("click", function () {
