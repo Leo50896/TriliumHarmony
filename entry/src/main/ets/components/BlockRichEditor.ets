@@ -182,8 +182,36 @@ export struct BlockRichEditor {
     }
   }
 
+  private selectionIsBold(): boolean {
+    try {
+      const selection = this.controller.getSelection();
+      let spans = this.textSpansOf(selection.spans);
+      if (selection.selection[0] === selection.selection[1]) {
+        const allSpans = this.textSpansOf(this.controller.getSpans());
+        for (let i = 0; i < allSpans.length; i++) {
+          const range = allSpans[i].spanPosition.spanRange;
+          if (selection.selection[0] >= range[0] && selection.selection[0] <= range[1]) {
+            spans = [allSpans[i]];
+            break;
+          }
+        }
+      }
+      for (let i = 0; i < spans.length; i++) {
+        if (this.isBold(spans[i].textStyle)) {
+          return true;
+        }
+      }
+    } catch (error) {
+      // Fall back to the toolbar state.
+    }
+    return this.boldActive;
+  }
+
   private toggleBold(): void {
-    this.boldActive = !this.boldActive;
+    // Read the actual span instead of trusting a cached button state. After a
+    // saved bold paragraph the component can be reused with a stale active flag.
+    const active: boolean = this.selectionIsBold();
+    this.boldActive = !active;
     this.boldOverride = this.boldActive;
     this.applyTextStyle({ fontWeight: this.boldActive ? 700 : 400 });
   }
