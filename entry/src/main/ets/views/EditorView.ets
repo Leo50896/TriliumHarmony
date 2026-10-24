@@ -1471,6 +1471,15 @@ export struct EditorView {
     }
   }
 
+  private attachmentEtapiPath(src: string): string {
+    const match: RegExpMatchArray | null =
+      src.match(/\/?api\/attachments\/([^/]+)\/image(?:\/.*)?$/i);
+    if (match === null) {
+      return '';
+    }
+    return `/etapi/attachments/${encodeURIComponent(match[1])}/content`;
+  }
+
   private async hydrateWebImages(content: string, noteId: string): Promise<string> {
     if (content.indexOf('<img') < 0) {
       return content;
@@ -1498,12 +1507,26 @@ export struct EditorView {
         if (context === null) {
           continue;
         }
-        const key: string = await ImageDiskCache.keyFor(active.serverUrl, src);
+        const base: string = active.serverUrl.replace(/\/+$/, '');
+        const etapiPath: string = this.attachmentEtapiPath(src);
+        const fetchSrc: string = etapiPath.length > 0 ? `${base}${etapiPath}` : src;
+        const key: string = await ImageDiskCache.keyFor(active.serverUrl, fetchSrc);
         let data: ArrayBuffer | null = await ImageDiskCache.readBuffer(context, key);
         if (data === null) {
-          const binary = await EtapiService.fetchUrlBinary(active, src);
+          const binary = await EtapiService.fetchUrlBinary(active, fetchSrc);
           data = binary.data;
           await ImageDiskCache.write(context, key, data);
+        }
+        let absolute: string = fetchSrc;
+        if (etapiPath.length === 0) {
+          if (src.startsWith('api/')) {
+            absolute = `${base}/${src}`;
+          } else if (src.startsWith('/api/')) {
+            absolute = `${base}${src}`;
+          }
+        }
+        if (absolute !== src) {
+          html = html.split(src).join(absolute);
         }
       } catch (error) {
         console.error(`WEB_IMAGE_FAILED ${src}`);

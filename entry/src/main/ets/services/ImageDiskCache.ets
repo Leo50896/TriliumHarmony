@@ -44,7 +44,15 @@ export class ImageDiskCache {
   }
 
   static keyForSync(serverUrl: string, src: string): string {
-    return ImageDiskCache.fallbackHash(`v2|${serverUrl}|${src}`);
+    let path: string = src;
+    const absolute: RegExpMatchArray | null = src.match(/^https?:\/\/[^/]+(\/.*)$/i);
+    if (absolute !== null) {
+      path = absolute[1];
+    }
+    if (path.length > 0 && !path.startsWith('/')) {
+      path = `/${path}`;
+    }
+    return ImageDiskCache.fallbackHash(`v3|${path}`);
   }
 
   static async keyFor(serverUrl: string, src: string): Promise<string> {

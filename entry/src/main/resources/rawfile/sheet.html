@@ -21,6 +21,7 @@
   (function () {
     var created = false;
     var workbook = {};
+    var sheetId = '';
     function bridge(name, value) {
       try {
         if (window.NativeSheetBridge && typeof window.NativeSheetBridge[name] === 'function') {
@@ -34,7 +35,12 @@
       Object.keys(cellData).forEach(function (r) {
         Object.keys(cellData[r] || {}).forEach(function (c) {
           var cell = cellData[r][c] || {};
-          var item = { r: Number(r), c: Number(c), v: cell.v !== undefined ? cell.v : '' };
+          var rawValue = cell.v;
+          if (rawValue !== null && typeof rawValue === 'object') {
+            rawValue = cell.m !== undefined ? cell.m : '';
+          }
+          var item = { r: Number(r), c: Number(c),
+            v: rawValue !== undefined && rawValue !== null ? rawValue : '' };
           if (cell.m !== undefined) item.m = String(cell.m);
           if (cell.f) item.f = cell.f;
           data.push(item);
@@ -45,8 +51,10 @@
     window.NativeSheet = {
       render: function (json) {
         try { workbook = JSON.parse(json || '{}'); } catch (e) { workbook = {}; }
-        var sheets = workbook.sheets || [];
-        var sheet = sheets[0] || {};
+        var sheetMap = workbook.sheets || {};
+        var order = workbook.sheetOrder || Object.keys(sheetMap);
+        sheetId = order.length > 0 ? order[0] : '';
+        var sheet = sheetMap[sheetId] || {};
         var data = [{
           name: sheet.name || 'Sheet1',
           color: '#0A84FF',
@@ -62,7 +70,7 @@
         luckysheet.create({
           container: 'luckysheet',
           data: data,
-          lang: 'zh',
+          lang: 'en',
           showinfobar: false,
           showtoolbar: false,
           showsheetbar: false,
@@ -77,6 +85,9 @@
             }
           }
         });
+        setTimeout(function () {
+          bridge('ready', 'ok');
+        }, 1200);
       },
       setReadOnly: function (readOnly) {
         try {
@@ -99,9 +110,15 @@
             if (item.f) cell.f = item.f;
             cellData[item.r][item.c] = cell;
           }
-          workbook.sheets = workbook.sheets || [{}];
-          workbook.sheets[0] = workbook.sheets[0] || {};
-          workbook.sheets[0].cellData = cellData;
+          workbook.sheets = workbook.sheets || {};
+          if (!sheetId) {
+            sheetId = 'sheet-01';
+          }
+          workbook.sheets[sheetId] = workbook.sheets[sheetId] || {};
+          workbook.sheets[sheetId].cellData = cellData;
+          if (!workbook.sheetOrder || workbook.sheetOrder.length === 0) {
+            workbook.sheetOrder = [sheetId];
+          }
           return JSON.stringify(workbook);
         } catch (e) {
           return JSON.stringify(workbook);
@@ -110,7 +127,7 @@
       getAndSend: function () {
         var live = luckysheet.getAllSheets()[0] || {};
         var merge = (live.config && live.config.merge) || [];
-        var sourceSheet = (workbook.sheets && workbook.sheets[0]) || {};
+        var sourceSheet = (workbook.sheets && workbook.sheets[sheetId]) || {};
         var sourceMerge = sourceSheet.mergeData || [];
         var hasComplex = false;
         var cells = live.data || live.celldata || [];
