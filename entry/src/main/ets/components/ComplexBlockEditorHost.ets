@@ -55,6 +55,7 @@ export interface ComplexBlockEditorParams {
 @Component
 export struct ComplexBlockEditorHost {
   @Prop block: ContentBlock = new ContentBlock(ContentBlockKind.PARAGRAPH);
+  @Prop startInRawMode: boolean = false;
   onSave: (nextBlock: ContentBlock) => void = () => {};
   onCancel: () => void = () => {};
 
@@ -76,7 +77,7 @@ export struct ComplexBlockEditorHost {
 
   aboutToAppear(): void {
     this.rawHtml = this.block.raw;
-    this.rawMode = false;
+    this.rawMode = this.startInRawMode;
     if (this.block.callout !== null) {
       this.calloutType = this.block.callout.type;
       this.calloutTitle = this.block.callout.title;

@@ -198,6 +198,8 @@ export struct EditorView {
   @State private codeEditText: string = '';
   @State private codeEditLanguage: string = '';
   @State private complexEditBlock: ContentBlock | null = null;
+  @State private complexEditStartRaw: boolean = false;
+  @State private complexMenuBlock: ContentBlock | null = null;
   @State private readingProgress: number = 0;
   @State private readingContentHeight: number = 0;
   @State private readingViewportHeight: number = 0;
@@ -1055,7 +1057,7 @@ export struct EditorView {
       BlockTarget.forBlock(block.id, block.kind, [itemIndex]));
   }
 
-  private requestComplexEdit(block: ContentBlock): void {
+  private requestComplexEdit(block: ContentBlock, startRaw: boolean = false): void {
     if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
       this.isSaving || this.isEditing || this.isRichEditing) {
       return;
@@ -1064,16 +1066,63 @@ export struct EditorView {
       block.kind !== ContentBlockKind.CALLOUT) {
       return;
     }
+    this.complexEditStartRaw = startRaw;
     this.complexEditBlock = block;
+  }
+
+  private openComplexMenu(block: ContentBlock): void {
+    if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
+      this.isSaving || this.isEditing || this.isRichEditing) {
+      return;
+    }
+    this.complexMenuBlock = block;
+  }
+
+  private closeComplexMenu(): void {
+    this.complexMenuBlock = null;
+  }
+
+  private complexMenuTitle(): string {
+    if (this.complexMenuBlock === null) {
+      return '块';
+    }
+    if (this.complexMenuBlock.kind === ContentBlockKind.TABLE) {
+      return '表格';
+    }
+    if (this.complexMenuBlock.kind === ContentBlockKind.IMAGE) {
+      return '图片';
+    }
+    if (this.complexMenuBlock.kind === ContentBlockKind.CALLOUT) {
+      return 'Callout';
+    }
+    return '块';
+  }
+
+  private editVisualFromMenu(): void {
+    const block: ContentBlock | null = this.complexMenuBlock;
+    this.complexMenuBlock = null;
+    if (block !== null) {
+      this.requestComplexEdit(block, false);
+    }
+  }
+
+  private editRawFromMenu(): void {
+    const block: ContentBlock | null = this.complexMenuBlock;
+    this.complexMenuBlock = null;
+    if (block !== null) {
+      this.requestComplexEdit(block, true);
+    }
   }
 
   private closeComplexEdit(): void {
     this.complexEditBlock = null;
+    this.complexEditStartRaw = false;
   }
 
   private saveComplexEdit(next: ContentBlock): void {
     const block: ContentBlock | null = this.complexEditBlock;
     this.complexEditBlock = null;
+    this.complexEditStartRaw = false;
     if (block === null) {
       return;
     }
@@ -2247,6 +2296,9 @@ export struct EditorView {
         .onClick(() => {
           this.requestComplexEdit(block);
         })
+        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+          this.openComplexMenu(block);
+        }))
       }
     } else if (block.kind === ContentBlockKind.IMAGE) {
       if (block.image !== null) {
@@ -2261,6 +2313,9 @@ export struct EditorView {
         .onClick(() => {
           this.requestComplexEdit(block);
         })
+        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+          this.openComplexMenu(block);
+        }))
       }
     } else if (block.kind === ContentBlockKind.CALLOUT) {
       if (block.callout !== null) {
@@ -2276,6 +2331,9 @@ export struct EditorView {
         .onClick(() => {
           this.requestComplexEdit(block);
         })
+        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+          this.openComplexMenu(block);
+        }))
       }
     } else if (block.kind === ContentBlockKind.FOOTNOTES) {
       Column({ space: 10 }) {
@@ -3488,6 +3546,58 @@ export struct EditorView {
   }
 
   @Builder
+  private ComplexBlockMenu() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .onClick(() => {
+          this.closeComplexMenu();
+        })
+      Column({ space: 2 }) {
+        Text(this.complexMenuTitle())
+          .fontSize(12)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .padding({ left: 16, top: 12, bottom: 8 })
+        Text(`编辑${this.complexMenuTitle()}`)
+          .width('100%')
+          .fontSize(15)
+          .fontColor($r('app.color.text_primary'))
+          .padding(14)
+          .onClick(() => {
+            this.editVisualFromMenu();
+          })
+        Text('高级：编辑原始 HTML')
+          .width('100%')
+          .fontSize(15)
+          .fontColor($r('app.color.primary'))
+          .padding(14)
+          .onClick(() => {
+            this.editRawFromMenu();
+          })
+        Text('取消')
+          .width('100%')
+          .fontSize(15)
+          .fontColor($r('app.color.text_secondary'))
+          .padding(14)
+          .onClick(() => {
+            this.closeComplexMenu();
+          })
+      }
+      .width('100%')
+      .backgroundColor($r('app.color.bg_primary'))
+      .borderRadius({ topLeft: 16, topRight: 16 })
+      .onClick(() => {
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(110)
+  }
+
+  @Builder
   private CodeEditorOverlay() {
     Column({ space: 12 }) {
       Row() {
@@ -3909,6 +4019,7 @@ export struct EditorView {
       if (this.complexEditBlock !== null) {
         ComplexBlockEditorHost({
           block: this.complexEditBlock as ContentBlock,
+          startInRawMode: this.complexEditStartRaw,
           onSave: (nextBlock: ContentBlock) => {
             this.saveComplexEdit(nextBlock);
           },
@@ -3916,6 +4027,10 @@ export struct EditorView {
             this.closeComplexEdit();
           }
         })
+      }
+
+      if (this.complexMenuBlock !== null) {
+        this.ComplexBlockMenu()
       }
     }
     .width('100%')
