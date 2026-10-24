@@ -4,6 +4,7 @@ import { EditorView } from './EditorView';
 import { SettingsView } from './SettingsView';
 import { NoteMapView } from './NoteMapView';
 import { LicenseView } from './LicenseView';
+import { ReadingPositionStore } from '../services/ReadingPositionStore';
 
 /**
  * Post-login shell. SideBarContainer owns the drawer gesture, width and
@@ -24,17 +25,17 @@ export struct MainView {
   @StorageLink(StateKeys.BACK_REQUEST) @Watch('onSystemBackRequest')
   private backRequest: number = 0;
   private viewHistory: string[] = [];
-  private noteHistory: string[] = [];
   private lastNoteId: string = '';
   private suppressNoteHistory: boolean = false;
 
   aboutToAppear(): void {
     this.lastNoteId = this.selectedNoteId;
+    ReadingPositionStore.setLastNote(this.selectedNoteId);
     this.updateBackAvailable();
   }
 
   private updateBackAvailable(): void {
-    const canHandle: boolean = this.showDrawer || this.viewHistory.length > 0 || this.noteHistory.length > 0;
+    const canHandle: boolean = this.showDrawer || this.viewHistory.length > 0;
     AppStorage.setOrCreate(StateKeys.BACK_AVAILABLE, canHandle);
   }
 
@@ -47,10 +48,8 @@ export struct MainView {
       this.viewHistory = [];
       this.currentView = 'editor';
     }
-    if (this.lastNoteId.length > 0 && this.lastNoteId !== this.selectedNoteId) {
-      this.noteHistory.push(this.lastNoteId);
-    }
     this.lastNoteId = this.selectedNoteId;
+    ReadingPositionStore.setLastNote(this.selectedNoteId);
     this.updateBackAvailable();
   }
 
@@ -78,17 +77,6 @@ export struct MainView {
     if (this.viewHistory.length > 0) {
       const previous: string = this.viewHistory.pop() as string;
       this.currentView = previous;
-      this.updateBackAvailable();
-      return true;
-    }
-    if (this.noteHistory.length > 0) {
-      const previousNote: string = this.noteHistory.pop() as string;
-      this.suppressNoteHistory = true;
-      AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, previousNote);
-      AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_TITLE, '');
-      this.lastNoteId = previousNote;
-      this.suppressNoteHistory = false;
-      this.currentView = 'editor';
       this.updateBackAvailable();
       return true;
     }
@@ -193,6 +181,7 @@ export struct MainView {
               AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, noteId);
               AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_TITLE, '');
               this.lastNoteId = noteId;
+              ReadingPositionStore.setLastNote(noteId);
               this.suppressNoteHistory = false;
               this.currentView = 'editor';
               this.updateBackAvailable();
@@ -214,6 +203,7 @@ export struct MainView {
                 this.suppressNoteHistory = true;
                 AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, parentNoteId);
                 this.lastNoteId = parentNoteId;
+                ReadingPositionStore.setLastNote(parentNoteId);
                 this.suppressNoteHistory = false;
                 this.currentView = 'editor';
                 this.updateBackAvailable();

@@ -6,6 +6,7 @@ import { MainView } from '../views/MainView';
 import { AuthSession } from '../models/AuthModels';
 import { SessionStore } from '../services/SessionStore';
 import { SettingsStore } from '../services/SettingsStore';
+import { ReadingPositionStore } from '../services/ReadingPositionStore';
 import { BiometricService } from '../services/BiometricService';
 import { StateKeys } from '../constants/StateKeys';
 import { font } from '@kit.ArkUI';
@@ -78,8 +79,15 @@ struct Index {
     const hostContext: common.Context | undefined = this.getUIContext().getHostContext();
     if (hostContext !== undefined) {
       await SettingsStore.initialize(hostContext as common.UIAbilityContext);
+      await ReadingPositionStore.initialize(hostContext as common.UIAbilityContext);
     }
     await this.restoreSession();
+    if (this.phase === 2) {
+      const lastNote: string = ReadingPositionStore.lastNoteId();
+      if (lastNote.length > 0) {
+        AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, lastNote);
+      }
+    }
     if (this.phase === 2 && this.faceUnlock) {
       this.locked = true;
       setTimeout(() => {
@@ -116,6 +124,7 @@ struct Index {
 
   onPageHide(): void {
     this.stopHeartbeat();
+    ReadingPositionStore.flush();
   }
 
   private startHeartbeat(): void {
@@ -170,6 +179,7 @@ struct Index {
 
   private async handleLogout(): Promise<void> {
     await SessionStore.clear();
+    ReadingPositionStore.clear();
     this.locked = false;
     this.phase = 1;
   }
