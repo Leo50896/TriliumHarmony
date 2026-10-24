@@ -3146,7 +3146,41 @@ export struct EditorView {
 
         if (this.isPdf && this.note !== null && !this.isLoading &&
           this.errorMessage.length === 0 && !this.isEditing) {
-          Stack({ alignContent: Alignment.TopStart }) {
+          Row() {
+            Column()
+              .width(44)
+              .height('100%')
+              .backgroundColor($r('app.color.bg_primary'))
+              .hitTestBehavior(HitTestMode.Block)
+              .gesture(
+                PanGesture({ direction: PanDirection.Right, distance: 50 })
+                  .onActionEnd((event: GestureEvent) => {
+                    if (event.offsetX > 55 && Math.abs(event.offsetY) < 70) {
+                      this.onSwipeRight();
+                    }
+                  })
+              )
+              .onTouch((event: TouchEvent) => {
+                const touch: TouchObject | undefined = event.touches[0];
+                if (touch === undefined) {
+                  return;
+                }
+                if (event.type === TouchType.Down) {
+                  this.swipeStartX = touch.x;
+                  this.swipeStartY = touch.y;
+                  this.swipeTracking = true;
+                } else if (event.type === TouchType.Up && this.swipeTracking) {
+                  const dx: number = touch.x - this.swipeStartX;
+                  const dy: number = touch.y - this.swipeStartY;
+                  this.swipeTracking = false;
+                  if (dx > 55 && Math.abs(dy) < 70) {
+                    this.onSwipeRight();
+                  }
+                } else if (event.type === TouchType.Cancel) {
+                  this.swipeTracking = false;
+                }
+              })
+            Stack({ alignContent: Alignment.TopStart }) {
             ForEach([this.pdfViewerEpoch], (epoch: number) => {
               PdfViewer({
                 sourceBuffer: this.pdfBuffer,
@@ -3191,10 +3225,13 @@ export struct EditorView {
               }
             })
           }
+          .layoutWeight(1)
+          .height('100%')
+          .clip(true)
+          .padding({ left: 0, right: 22 })
+          }
           .width('100%')
           .layoutWeight(1)
-          .clip(true)
-          .padding({ left: 22, right: 22 })
         } else {
           Scroll(this.scroller) {
           Column() {
