@@ -290,6 +290,28 @@ export struct EditorView {
     this.readingProgress = Math.min(1, Math.max(0, offset / scrollable));
   }
 
+  private showProgressBar(): boolean {
+    if (this.note === null || this.isLoading || this.isEditing || this.isRichEditing ||
+      this.errorMessage.length > 0) {
+      return false;
+    }
+    if (this.isPdf) {
+      return this.pdfPageCount > 1;
+    }
+    return (this.blocks.length > 0 || this.isSpreadsheet) &&
+      this.readingContentHeight > this.readingViewportHeight + 1;
+  }
+
+  private progressRatio(): number {
+    if (this.isPdf) {
+      if (this.pdfPageCount <= 1) {
+        return 0;
+      }
+      return Math.min(1, Math.max(0, this.pdfCurrentPage / (this.pdfPageCount - 1)));
+    }
+    return this.readingProgress;
+  }
+
   private persistScrollPosition(): void {
     if (this.loadedNoteId.length === 0 || this.isRestoringScroll) {
       return;
@@ -3147,39 +3169,6 @@ export struct EditorView {
         if (this.isPdf && this.note !== null && !this.isLoading &&
           this.errorMessage.length === 0 && !this.isEditing) {
           Row() {
-            Column()
-              .width(44)
-              .height('100%')
-              .backgroundColor($r('app.color.bg_primary'))
-              .hitTestBehavior(HitTestMode.Block)
-              .gesture(
-                PanGesture({ direction: PanDirection.Right, distance: 50 })
-                  .onActionEnd((event: GestureEvent) => {
-                    if (event.offsetX > 55 && Math.abs(event.offsetY) < 70) {
-                      this.onSwipeRight();
-                    }
-                  })
-              )
-              .onTouch((event: TouchEvent) => {
-                const touch: TouchObject | undefined = event.touches[0];
-                if (touch === undefined) {
-                  return;
-                }
-                if (event.type === TouchType.Down) {
-                  this.swipeStartX = touch.x;
-                  this.swipeStartY = touch.y;
-                  this.swipeTracking = true;
-                } else if (event.type === TouchType.Up && this.swipeTracking) {
-                  const dx: number = touch.x - this.swipeStartX;
-                  const dy: number = touch.y - this.swipeStartY;
-                  this.swipeTracking = false;
-                  if (dx > 55 && Math.abs(dy) < 70) {
-                    this.onSwipeRight();
-                  }
-                } else if (event.type === TouchType.Cancel) {
-                  this.swipeTracking = false;
-                }
-              })
             Stack({ alignContent: Alignment.TopStart }) {
             ForEach([this.pdfViewerEpoch], (epoch: number) => {
               PdfViewer({
@@ -3228,7 +3217,26 @@ export struct EditorView {
           .layoutWeight(1)
           .height('100%')
           .clip(true)
-          .padding({ left: 0, right: 22 })
+          .padding({ left: 22, right: 6 })
+            Column() {
+              Stack({ alignContent: Alignment.Top }) {
+                Column()
+                  .width(5)
+                  .height('100%')
+                  .borderRadius(3)
+                  .backgroundColor($r('app.color.border'))
+                Column()
+                  .width(5)
+                  .height(`${Math.max(this.progressRatio() * 100, 2)}%`)
+                  .borderRadius(3)
+                  .backgroundColor($r('app.color.primary'))
+              }
+              .width(6)
+              .height('100%')
+            }
+            .width(6)
+            .height('100%')
+            .margin({ right: 4 })
           }
           .width('100%')
           .layoutWeight(1)
@@ -3424,10 +3432,7 @@ export struct EditorView {
       .width('100%')
       .height('100%')
 
-      if (this.note !== null && !this.isLoading && !this.isEditing && !this.isRichEditing &&
-        !this.isPdf && this.errorMessage.length === 0 &&
-        (this.blocks.length > 0 || this.isSpreadsheet) &&
-        this.readingContentHeight > this.readingViewportHeight + 1) {
+      if (this.showProgressBar()) {
         Row() {
           Stack({ alignContent: Alignment.Top }) {
             Row()
@@ -3437,16 +3442,15 @@ export struct EditorView {
               .backgroundColor($r('app.color.border'))
             Row()
               .width(5)
-              .height(`${Math.max(this.readingProgress * 100, 0)}%`)
+              .height(`${Math.max(this.progressRatio() * 100, 0)}%`)
               .borderRadius(3)
               .backgroundColor($r('app.color.primary'))
           }
           .width(6)
           .height('100%')
         }
-        .width(0)
-        .height(0)
-        .opacity(0)
+        .width('100%')
+        .height('100%')
         .justifyContent(FlexAlign.End)
         .padding({ top: 8, bottom: 12, right: 5 })
         .hitTestBehavior(HitTestMode.None)
