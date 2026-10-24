@@ -15,6 +15,7 @@ export struct CodeBlock {
   @Prop showHeader: boolean = true;
   @Prop showLineNumbers: boolean = true;
   @Prop sourceLines: string[] = [];
+  onEdit: () => void = () => {};
   @StorageLink(StateKeys.READER_FONT_SIZE) private readerFontSize: number = 16;
   @State private copied: boolean = false;
   @State private showLanguageMenu: boolean = false;
@@ -362,6 +363,15 @@ export struct CodeBlock {
         Blank()
 
         Row({ space: 10 }) {
+          Text('编辑')
+            .fontSize(10.5)
+            .fontColor($r('app.color.primary'))
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius(6)
+            .backgroundColor($r('app.color.primary_soft'))
+            .onClick(() => {
+              this.onEdit();
+            })
           Text(this.selecting ? '完成' : '选择')
             .fontSize(10.5)
             .fontColor(this.selecting ? $r('app.color.primary') : $r('app.color.text_secondary'))

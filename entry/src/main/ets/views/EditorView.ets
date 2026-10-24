@@ -193,6 +193,9 @@ export struct EditorView {
   @State private keyboardInset: number = 0;
   @State private editingTarget: BlockTarget | null = null;
   @State private blockCommitTick: number = 0;
+  @State private codeEditTarget: BlockTarget | null = null;
+  @State private codeEditText: string = '';
+  @State private codeEditLanguage: string = '';
   @State private readingProgress: number = 0;
   @State private readingContentHeight: number = 0;
   @State private readingViewportHeight: number = 0;
@@ -1042,6 +1045,53 @@ export struct EditorView {
     return this.editingTarget.isSame(BlockTarget.forBlock(block.id, block.kind));
   }
 
+  private isEditingListItem(block: ContentBlock, itemIndex: number): boolean {
+    if (this.editingTarget === null) {
+      return false;
+    }
+    return this.editingTarget.isSame(
+      BlockTarget.forBlock(block.id, block.kind, [itemIndex]));
+  }
+
+  private requestCodeEdit(block: ContentBlock): void {
+    if (block.kind !== ContentBlockKind.CODE || this.note === null || this.isSaving ||
+      this.isEditing || this.isRichEditing) {
+      return;
+    }
+    this.codeEditTarget = BlockTarget.forBlock(block.id, block.kind);
+    this.codeEditText = block.codeLines.join('\n');
+    this.codeEditLanguage = block.language;
+  }
+
+  private closeCodeEdit(): void {
+    this.codeEditTarget = null;
+    this.codeEditText = '';
+    this.codeEditLanguage = '';
+  }
+
+  private saveCodeEdit(): void {
+    if (this.codeEditTarget === null) {
+      return;
+    }
+    const target: BlockTarget = this.codeEditTarget;
+    const block: ContentBlock | null = this.blockForTarget(target);
+    if (block === null) {
+      this.closeCodeEdit();
+      return;
+    }
+    const lines: string[] = this.codeEditText.replace(/\r\n/g, '\n').split('\n');
+    const language: string = this.codeEditLanguage.trim();
+    const replacement: ContentBlock = new ContentBlock(block.kind, block.text, block.level,
+      lines, language, block.segments, block.listItems, block.table, block.image,
+      block.listMarkers, block.callout, block.include, block.listLevels, block.indent,
+      block.quoteBlocks, block.id, block.raw, block.source);
+    replacement.attrs = block.attrs;
+    replacement.children = block.children;
+    replacement.dirty = true;
+    this.closeCodeEdit();
+    this.commitReplacement(target, replacement);
+  }
+
   private canBlockEdit(block: ContentBlock): boolean {
     if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
       this.isEditing || this.isRichEditing || this.isSaving || this.isSpreadsheet || this.isPdf) {
@@ -1100,33 +1150,7 @@ export struct EditorView {
     return value;
   }
 
-  private commitBlockEdit(target: BlockTarget, segments: InlineSegment[], text: string): void {
-    if (this.editingTarget === null || !this.editingTarget.isSame(target)) {
-      return;
-    }
-    this.editingTarget = null;
-    let block: ContentBlock | null = null;
-    for (let i = 0; i < this.blocks.length; i++) {
-      if (this.blocks[i].id === target.blockId) {
-        block = this.blocks[i];
-        break;
-      }
-    }
-    if (block === null) {
-      return;
-    }
-    if (text === this.blockText(block) &&
-      this.segmentSignature(segments) === this.segmentSignature(block.segments)) {
-      return;
-    }
-
-    const replacement: ContentBlock = new ContentBlock(block.kind, text, block.level,
-      block.codeLines, block.language, segments, block.listItems, block.table, block.image,
-      block.listMarkers, block.callout, block.include, block.listLevels, block.indent,
-      block.quoteBlocks, block.id, block.raw, block.source);
-    replacement.attrs = block.attrs;
-    replacement.children = block.children;
-    replacement.dirty = true;
+  private commitReplacement(target: BlockTarget, replacement: ContentBlock): void {
     try {
       this.blocks = TriliumCodec.replaceBlock(this.blocks, target.blockId, replacement);
       const nextRaw: string = TriliumCodec.serializeToRaw(this.blocks, 'html');
@@ -1140,6 +1164,54 @@ export struct EditorView {
     } catch (error) {
       console.error(`BLOCK_COMMIT_FAIL ${JSON.stringify(error)}`);
     }
+  }
+
+  private commitBlockEdit(target: BlockTarget, segments: InlineSegment[], text: string): void {
+    if (this.editingTarget === null || !this.editingTarget.isSame(target)) {
+      return;
+    }
+    this.editingTarget = null;
+    const block: ContentBlock | null = this.blockForTarget(target);
+    if (block === null) {
+      return;
+    }
+
+    if (target.childPath.length > 0 && block.kind === ContentBlockKind.LIST) {
+      const itemIndex: number = target.childPath[0];
+      if (itemIndex < 0 || itemIndex >= block.listItems.length) {
+        return;
+      }
+      const oldItem: InlineSegment[] = block.listItems[itemIndex];
+      if (text === HtmlContentParser.segmentsText(oldItem) &&
+        this.segmentSignature(segments) === this.segmentSignature(oldItem)) {
+        return;
+      }
+      const items: InlineSegment[][] = block.listItems.slice();
+      items[itemIndex] = segments;
+      const replacement: ContentBlock = new ContentBlock(block.kind, block.text, block.level,
+        block.codeLines, block.language, block.segments, items, block.table, block.image,
+        block.listMarkers, block.callout, block.include, block.listLevels, block.indent,
+        block.quoteBlocks, block.id, block.raw, block.source);
+      replacement.attrs = block.attrs;
+      replacement.children = block.children;
+      replacement.dirty = true;
+      this.commitReplacement(target, replacement);
+      return;
+    }
+
+    if (text === this.blockText(block) &&
+      this.segmentSignature(segments) === this.segmentSignature(block.segments)) {
+      return;
+    }
+
+    const replacement: ContentBlock = new ContentBlock(block.kind, text, block.level,
+      block.codeLines, block.language, segments, block.listItems, block.table, block.image,
+      block.listMarkers, block.callout, block.include, block.listLevels, block.indent,
+      block.quoteBlocks, block.id, block.raw, block.source);
+    replacement.attrs = block.attrs;
+    replacement.children = block.children;
+    replacement.dirty = true;
+    this.commitReplacement(target, replacement);
   }
 
   private async saveBlockContent(content: string): Promise<void> {
@@ -2072,16 +2144,34 @@ export struct EditorView {
                 .fontColor($r('app.color.text_secondary'))
             }
             Column() {
-              InlineTextView({
-                segments: this.listSegments(item),
-                fontSize: this.readerSize(16.5),
-                lineHeight: this.readerSize(27),
-                color: HtmlContentParser.segmentsText(item).startsWith('☑') ?
-                  $r('app.color.text_tertiary') : $r('app.color.text_primary'),
-                onLink: (href: string) => {
-                  this.openLink(href);
-                }
-              })
+              if (this.isEditingListItem(block, index)) {
+                BlockRichEditor({
+                  segments: this.listSegments(item),
+                  fontSize: this.readerSize(16.5),
+                  lineHeight: this.readerSize(27),
+                  heading: false,
+                  commitTick: this.blockCommitTick,
+                  onCommit: (segments: InlineSegment[], text: string) => {
+                    this.commitBlockEdit(
+                      BlockTarget.forBlock(block.id, block.kind, [index]), segments, text);
+                  }
+                })
+              } else {
+                InlineTextView({
+                  segments: this.listSegments(item),
+                  fontSize: this.readerSize(16.5),
+                  lineHeight: this.readerSize(27),
+                  color: HtmlContentParser.segmentsText(item).startsWith('☑') ?
+                    $r('app.color.text_tertiary') : $r('app.color.text_primary'),
+                  onLink: (href: string) => {
+                    this.openLink(href);
+                  },
+                  onTap: () => {
+                    this.handleRequestEdit(
+                      BlockTarget.forBlock(block.id, block.kind, [index]));
+                  }
+                })
+              }
             }
             .layoutWeight(1)
           }
@@ -2094,18 +2184,27 @@ export struct EditorView {
       }
       .width('100%')
     } else if (block.kind === ContentBlockKind.CODE) {
-      if (block.language.toLowerCase() === 'mermaid' &&
-        MermaidParser.parse(block.codeLines).nodes.length > 0) {
-        MermaidFlowchart({ sourceLines: block.codeLines })
-      } else {
-        CodeBlock({
-          fileName: this.note !== null ? this.note.title : 'snippet',
-          language: block.language.length > 0 ? block.language : 'CODE',
-          sourceLines: block.codeLines,
-          showHeader: !this.markdownPreview,
-          showLineNumbers: !this.markdownPreview
-        })
+      Column() {
+        if (block.language.toLowerCase() === 'mermaid' &&
+          MermaidParser.parse(block.codeLines).nodes.length > 0) {
+          MermaidFlowchart({ sourceLines: block.codeLines })
+        } else {
+          CodeBlock({
+            fileName: this.note !== null ? this.note.title : 'snippet',
+            language: block.language.length > 0 ? block.language : 'CODE',
+            sourceLines: block.codeLines,
+            showHeader: !this.markdownPreview,
+            showLineNumbers: !this.markdownPreview,
+            onEdit: () => {
+              this.requestCodeEdit(block);
+            }
+          })
+        }
       }
+      .width('100%')
+      .onClick(() => {
+        this.requestCodeEdit(block);
+      })
     } else if (block.kind === ContentBlockKind.TABLE) {
       if (block.table !== null) {
         TriliumTable({
@@ -3342,6 +3441,67 @@ export struct EditorView {
     .zIndex(20)
   }
 
+  @Builder
+  private CodeEditorOverlay() {
+    Column({ space: 12 }) {
+      Row() {
+        Text('编辑代码块')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+        Text('取消')
+          .fontSize(14)
+          .fontColor($r('app.color.text_secondary'))
+          .padding(8)
+          .onClick(() => {
+            this.closeCodeEdit();
+          })
+        Text('保存')
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.primary'))
+          .padding(8)
+          .onClick(() => {
+            this.saveCodeEdit();
+          })
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        Text('语言')
+          .fontSize(13)
+          .fontColor($r('app.color.text_secondary'))
+        TextInput({ text: this.codeEditLanguage, placeholder: '例如 bash、python' })
+          .layoutWeight(1)
+          .height(36)
+          .fontSize(13)
+          .onChange((value: string) => {
+            this.codeEditLanguage = value;
+          })
+      }
+      .width('100%')
+
+      TextArea({ text: this.codeEditText, placeholder: '代码内容' })
+        .width('100%')
+        .layoutWeight(1)
+        .fontSize(13)
+        .fontFamily('monospace')
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(8)
+        .border({ width: 1, color: $r('app.color.border') })
+        .padding(10)
+        .onChange((value: string) => {
+          this.codeEditText = value;
+        })
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+    .backgroundColor($r('app.color.bg_primary'))
+    .zIndex(100)
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
@@ -3694,6 +3854,10 @@ export struct EditorView {
       if (this.note !== null && this.isSpreadsheet && !this.isEditing &&
         this.sheetNames.length > 1) {
         this.SheetTabOverlay()
+      }
+
+      if (this.codeEditTarget !== null) {
+        this.CodeEditorOverlay()
       }
     }
     .width('100%')

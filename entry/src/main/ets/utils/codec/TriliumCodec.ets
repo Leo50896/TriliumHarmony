@@ -127,9 +127,41 @@ export class TriliumCodec {
           `${TriliumCodec.escapeHtml(block.codeLines.join('\n'))}</code></pre>`;
       case ContentBlockKind.PARAGRAPH:
         return `<p>${TriliumCodec.serializeInlineHtml(block.segments)}</p>`;
+      case ContentBlockKind.LIST:
+        return TriliumCodec.serializeHtmlList(block);
       default:
         return block.raw.length > 0 ? block.raw : block.text;
     }
+  }
+
+  private static serializeHtmlList(block: ContentBlock): string {
+    let ordered: boolean = false;
+    for (let i = 0; i < block.listMarkers.length; i++) {
+      if (/^\d+[.)]$/.test(block.listMarkers[i])) {
+        ordered = true;
+        break;
+      }
+    }
+    let html: string = ordered ? '<ol>' : '<ul>';
+    let level: number = 0;
+    for (let i = 0; i < block.listItems.length; i++) {
+      const targetLevel: number = i < block.listLevels.length ? block.listLevels[i] : 0;
+      while (targetLevel > level) {
+        html += ordered ? '<ol>' : '<ul>';
+        level++;
+      }
+      while (targetLevel < level) {
+        html += ordered ? '</ol>' : '</ul>';
+        level--;
+      }
+      html += `<li>${TriliumCodec.serializeInlineHtml(block.listItems[i])}</li>`;
+    }
+    while (level > 0) {
+      html += ordered ? '</ol>' : '</ul>';
+      level--;
+    }
+    html += ordered ? '</ol>' : '</ul>';
+    return html;
   }
 
   private static serializeMarkdownBlock(block: ContentBlock): string {

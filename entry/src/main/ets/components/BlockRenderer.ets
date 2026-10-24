@@ -33,11 +33,11 @@ export class BlockRendererRegistry {
       case ContentBlockKind.HEADING:
         return new BlockRendererSpec(BlockEditMode.INLINE, true, 'heading');
       case ContentBlockKind.LIST:
-        return new BlockRendererSpec(BlockEditMode.STRUCTURED, false, 'list');
+        return new BlockRendererSpec(BlockEditMode.INLINE, true, 'ListItemEditor');
       case ContentBlockKind.QUOTE:
         return new BlockRendererSpec(BlockEditMode.STRUCTURED, false, 'quote');
       case ContentBlockKind.CODE:
-        return new BlockRendererSpec(BlockEditMode.CODE, false, 'code');
+        return new BlockRendererSpec(BlockEditMode.CODE, false, 'CodeBlockEditor');
       case ContentBlockKind.TABLE:
         return new BlockRendererSpec(BlockEditMode.STRUCTURED, false, 'table');
       case ContentBlockKind.IMAGE:
