@@ -113,15 +113,12 @@
     var byId = {};
     nodes.forEach(function (n) { byId[n.id] = n; });
 
-    var nodeLinkRatio = nodes.length / Math.max(1, links.length);
-    var charge = Math.min(-3, -20 / Math.pow(nodeLinkRatio, 1.5));
-
     simulation = d3.forceSimulation(nodes)
       .force("link", d3.forceLink(links).id(function (d) { return d.id; })
-        .distance(function (l) { return l.kind === "parent" ? 120 : 170; })
-        .strength(function (l) { return l.kind === "parent" ? 0.7 : 0.22; }))
-      .force("charge", d3.forceManyBody().strength(charge).distanceMax(1000))
-      .force("center", d3.forceCenter(0, 0).strength(0.2))
+        .distance(function (l) { return l.kind === "parent" ? 120 : 220; })
+        .strength(function (l) { return l.kind === "parent" ? 0.7 : 0.15; }))
+      .force("charge", d3.forceManyBody().strength(-420).distanceMax(1800))
+      .force("center", d3.forceCenter(0, 0).strength(0.03))
       .force("collide", d3.forceCollide().radius(function (d) { return (d.folder ? 14 : 5); }).iterations(2));
 
     var link = linkLayer.selectAll("line").data(links).enter().append("line")
@@ -170,7 +167,7 @@
 
     simulation.on("end", function () {
       if (current && current.mode === "link") {
-        fitLinked();
+        fitToScreen(false);
       } else {
         focusRoot();
       }
