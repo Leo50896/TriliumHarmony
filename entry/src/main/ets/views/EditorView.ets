@@ -928,8 +928,7 @@ export struct EditorView {
 
   private isEditable(): boolean {
     return this.note !== null && !this.isOffline && this.note.type !== 'image' &&
-      this.note.type !== 'file' && this.note.type !== 'spreadsheet' &&
-      !this.note.isProtected;
+      this.note.type !== 'file' && !this.note.isProtected;
   }
 
   private breadcrumbCrumbs(): string[] {
@@ -1378,6 +1377,31 @@ export struct EditorView {
       !this.markdownPreview;
   }
 
+  private isWebSheetMode(): boolean {
+    return this.note !== null && this.note.type === 'spreadsheet' && !this.note.isProtected;
+  }
+
+  private async onWebSheetJson(json: string): Promise<void> {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (context === null || this.note === null || json.length === 0) {
+      return;
+    }
+    this.spreadsheetContent = json;
+    try {
+      await LocalStore.updateNoteContent(context, SessionStore.accountKey(),
+        this.note.noteId, json);
+      this.saveStatus = '本地已保存';
+      if (this.webPushTimer >= 0) {
+        clearTimeout(this.webPushTimer);
+      }
+      this.webPushTimer = setTimeout(() => {
+        this.pushInBackground();
+      }, 1200);
+    } catch (error) {
+      this.saveStatus = '待同步';
+    }
+  }
+
   private toggleWebEdit(): void {
     if (this.webEditing) {
       this.webEditing = false;
@@ -1502,6 +1526,10 @@ export struct EditorView {
   }
 
   private toggleEdit(): void {
+    if (this.isWebSheetMode()) {
+      this.toggleWebEdit();
+      return;
+    }
     if (this.isWebTextMode()) {
       this.toggleWebEdit();
       return;
@@ -2754,7 +2782,7 @@ export struct EditorView {
       }
 
       if (this.isEditable()) {
-        Text(this.isWebTextMode() ? (this.webEditing ? '保存' : '编辑') :
+        Text((this.isWebTextMode() || this.isWebSheetMode()) ? (this.webEditing ? '保存' : '编辑') :
           (this.isEditing || this.isRichEditing ? '取消编辑' : '编辑'))
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
@@ -4037,7 +4065,12 @@ export struct EditorView {
                   .margin({ left: -22, right: -22 })
                 } else if (this.isSpreadsheet) {
                   SheetWebView({
-                    content: this.spreadsheetContent
+                    content: this.spreadsheetContent,
+                    readOnly: !this.webEditing,
+                    saveTick: this.webSaveTick,
+                    onJson: (json: string) => {
+                      this.onWebSheetJson(json);
+                    }
                   })
                   .width('100%')
                   .height(720)

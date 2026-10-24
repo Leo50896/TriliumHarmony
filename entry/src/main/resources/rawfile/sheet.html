@@ -20,6 +20,7 @@
 <script>
   (function () {
     var created = false;
+    var workbook = {};
     function bridge(name, value) {
       try {
         if (window.NativeSheetBridge && typeof window.NativeSheetBridge[name] === 'function') {
@@ -43,7 +44,6 @@
     }
     window.NativeSheet = {
       render: function (json) {
-        var workbook = {};
         try { workbook = JSON.parse(json || '{}'); } catch (e) { workbook = {}; }
         var sheets = workbook.sheets || [];
         var sheet = sheets[0] || {};
@@ -84,6 +84,31 @@
             luckysheet.setAllowEdit(!readOnly);
           }
         } catch (e) {}
+      },
+      getJson: function () {
+        try {
+          var live = luckysheet.getAllSheets()[0] || {};
+          var cells = live.data || live.celldata || [];
+          var cellData = {};
+          for (var i = 0; i < cells.length; i++) {
+            var item = cells[i];
+            if (!cellData[item.r]) cellData[item.r] = {};
+            var cell = {};
+            if (item.v !== undefined) cell.v = item.v;
+            if (item.m !== undefined) cell.m = String(item.m);
+            if (item.f) cell.f = item.f;
+            cellData[item.r][item.c] = cell;
+          }
+          workbook.sheets = workbook.sheets || [{}];
+          workbook.sheets[0] = workbook.sheets[0] || {};
+          workbook.sheets[0].cellData = cellData;
+          return JSON.stringify(workbook);
+        } catch (e) {
+          return JSON.stringify(workbook);
+        }
+      },
+      getAndSend: function () {
+        bridge('json', this.getJson());
       }
     };
   })();

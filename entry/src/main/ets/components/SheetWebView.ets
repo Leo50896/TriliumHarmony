@@ -2,10 +2,17 @@ import { webview } from '@kit.ArkWeb';
 
 class SheetBridge {
   onReady: () => void = () => {};
+  onJson: (json: string) => void = () => {};
 
   ready(value: string): void {
     if (value.length > 0) {
       this.onReady();
+    }
+  }
+
+  json(value: string): void {
+    if (value.length > 0) {
+      this.onJson(value);
     }
   }
 }
@@ -13,6 +20,9 @@ class SheetBridge {
 @Component
 export struct SheetWebView {
   @Prop @Watch('onContentChanged') content: string = '';
+  @Prop @Watch('onReadOnlyChanged') readOnly: boolean = true;
+  @Prop @Watch('onSaveTick') saveTick: number = 0;
+  onJson: (json: string) => void = () => {};
   @State private ready: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: SheetBridge = new SheetBridge();
@@ -20,6 +30,9 @@ export struct SheetWebView {
   aboutToAppear(): void {
     this.bridge.onReady = () => {
       this.inject();
+    };
+    this.bridge.onJson = (json: string) => {
+      this.onJson(json);
     };
   }
 
@@ -33,6 +46,20 @@ export struct SheetWebView {
 
   private onContentChanged(): void {
     this.inject();
+  }
+
+  private onReadOnlyChanged(): void {
+    if (!this.ready) {
+      return;
+    }
+    this.controller.runJavaScript(`window.NativeSheet.setReadOnly(${this.readOnly})`);
+  }
+
+  private onSaveTick(): void {
+    if (!this.ready || this.saveTick === 0) {
+      return;
+    }
+    this.controller.runJavaScript('window.NativeSheet.getAndSend()');
   }
 
   build() {
@@ -52,7 +79,7 @@ export struct SheetWebView {
         .javaScriptProxy({
           object: this.bridge,
           name: 'NativeSheetBridge',
-          methodList: ['ready'],
+          methodList: ['ready', 'json'],
           controller: this.controller
         })
         .onPageEnd(() => {
