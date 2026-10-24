@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <style>
+    :root {
+      --bg: #1e1f22;
+      --text: #e6e6e6;
+      --muted: #9aa0a6;
+      --border: #3a3d42;
+      --toolbar: #26282c;
+      --accent: #4a90e2;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans SC", "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      overflow-x: hidden;
+    }
+    body.light {
+      --bg: #fafafa;
+      --text: #202124;
+      --muted: #6b7280;
+      --border: #d9dde3;
+      --toolbar: #f1f3f5;
+      --accent: #2563eb;
+      background: var(--bg);
+      color: var(--text);
+    }
+    #shell {
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    #editor {
+      min-height: 100vh;
+      padding: 18px 20px 140px 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+    }
+    .ck.ck-editor {
+      background: var(--bg);
+      color: var(--text);
+    }
+    .ck.ck-toolbar {
+      background: var(--toolbar) !important;
+      border-color: var(--border) !important;
+      color: var(--text) !important;
+    }
+    .ck.ck-toolbar .ck-button {
+      color: var(--text) !important;
+    }
+    .ck.ck-toolbar .ck-button.ck-on {
+      background: color-mix(in srgb, var(--accent) 26%, transparent) !important;
+    }
+    .ck.ck-editor__main > .ck-editor__editable {
+      background: var(--bg) !important;
+      color: var(--text) !important;
+      border-color: var(--border) !important;
+      min-height: calc(100vh - 80px);
+      padding: 8px 4px 80px 4px !important;
+      box-shadow: none !important;
+    }
+    .ck.ck-editor__editable.ck-focused {
+      border-color: var(--accent) !important;
+      box-shadow: none !important;
+    }
+    .ck.ck-editor__editable a {
+      color: var(--accent);
+    }
+    .ck.ck-editor__editable blockquote {
+      border-left: 3px solid var(--border);
+      margin-left: 0;
+      padding-left: 14px;
+      color: var(--muted);
+    }
+    .ck.ck-editor__editable pre,
+    .ck.ck-editor__editable code {
+      background: #2a2c31;
+      color: #d7ba7d;
+      border-radius: 5px;
+    }
+    body.light .ck.ck-editor__editable pre,
+    body.light .ck.ck-editor__editable code {
+      background: #f0f2f5;
+      color: #9a4f00;
+    }
+    .ck.ck-editor__editable img {
+      max-width: 100%;
+      height: auto;
+    }
+    .ck.ck-editor__editable table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .ck.ck-editor__editable td,
+    .ck.ck-editor__editable th {
+      border: 1px solid var(--border);
+      padding: 6px 8px;
+    }
+    .ck.ck-editor__editable th {
+      background: var(--toolbar);
+    }
+    .ck.ck-balloon-panel,
+    .ck.ck-dropdown__panel {
+      background: var(--toolbar) !important;
+      color: var(--text) !important;
+    }
+    .ck.ck-list {
+      background: var(--toolbar) !important;
+    }
+    .ck.ck-list__item .ck-button {
+      color: var(--text) !important;
+    }
+    #error {
+      display: none;
+      padding: 16px;
+      color: #ff8a80;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="shell">
+    <div id="editor"></div>
+    <div id="error"></div>
+  </div>
+  <script src="ckeditor.js"></script>
+  <script>
+    (function () {
+      var editor = null;
+      var ready = false;
+      var pendingHtml = '';
+      var pendingReadOnly = true;
+      var pendingTheme = 'dark';
+      var changeTimer = 0;
+
+      function bridge(name, value) {
+        try {
+          if (window.NativeEditorBridge && typeof window.NativeEditorBridge[name] === 'function') {
+            window.NativeEditorBridge[name](value);
+          }
+        } catch (e) {
+          // Native bridge can be unavailable during page setup.
+        }
+      }
+
+      function postHtml() {
+        if (!editor) return;
+        try {
+          bridge('postHtml', editor.getData());
+        } catch (e) {
+          bridge('postError', String(e));
+        }
+      }
+
+      function schedulePost() {
+        clearTimeout(changeTimer);
+        changeTimer = setTimeout(postHtml, 260);
+      }
+
+      function linkNoteId(href) {
+        if (!href) return '';
+        var hash = href.indexOf('#') >= 0 ? href.substring(href.indexOf('#') + 1) : href;
+        if (hash.indexOf('root/') === 0 || hash.indexOf('note/') === 0) {
+          return hash.substring(hash.indexOf('/') + 1);
+        }
+        if (hash.indexOf('root') === 0 && hash.length > 4) {
+          return hash.substring(5);
+        }
+        return '';
+      }
+
+      function readOnlyOn() {
+        if (!editor) return;
+        try {
+          editor.enableReadOnlyMode('harmony-reader');
+        } catch (e) {
+          try { editor.isReadOnly = true; } catch (ignore) {}
+        }
+      }
+
+      function readOnlyOff() {
+        if (!editor) return;
+        try {
+          editor.disableReadOnlyMode('harmony-reader');
+        } catch (e) {
+          try { editor.isReadOnly = false; } catch (ignore) {}
+        }
+      }
+
+      window.NativeEditor = {
+        init: function (html, readOnly, theme) {
+          pendingHtml = html || '';
+          pendingReadOnly = readOnly !== false;
+          pendingTheme = theme || 'dark';
+          if (ready) {
+            this.setHtml(pendingHtml);
+            this.setReadOnly(pendingReadOnly);
+            this.setTheme(pendingTheme);
+            return;
+          }
+          document.body.className = pendingTheme === 'light' ? 'light' : '';
+          ClassicEditor.create(document.getElementById('editor'), {
+            initialData: pendingHtml,
+            licenseKey: 'GPL',
+            toolbar: {
+              items: ['undo', 'redo', '|', 'heading', '|', 'bold', 'italic',
+                'strikethrough', 'code', 'link', '|', 'bulletedList', 'numberedList',
+                '|', 'blockQuote', 'insertTable', '|', 'outdent', 'indent'],
+              shouldNotGroupWhenFull: false
+            },
+            placeholder: '开始输入…'
+          }).then(function (instance) {
+            editor = instance;
+            ready = true;
+            if (pendingReadOnly) readOnlyOn();
+            editor.model.document.on('change:data', schedulePost);
+            var root = document.getElementById('editor');
+            root.addEventListener('click', function (event) {
+              var node = event.target;
+              while (node && node !== root) {
+                if (node.tagName && node.tagName.toLowerCase() === 'a') {
+                  var noteId = linkNoteId(node.getAttribute('href') || '');
+                  if (noteId) {
+                    event.preventDefault();
+                    bridge('postLink', noteId);
+                    return;
+                  }
+                }
+                node = node.parentNode;
+              }
+            }, true);
+            setTimeout(function () {
+              bridge('postReady', 'ok');
+            }, 60);
+          }).catch(function (error) {
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = String(error);
+            bridge('postError', String(error));
+          });
+        },
+        setHtml: function (html) {
+          pendingHtml = html || '';
+          if (!editor) return;
+          try {
+            if (editor.getData() !== pendingHtml) {
+              editor.setData(pendingHtml);
+            }
+          } catch (e) {
+            bridge('postError', String(e));
+          }
+        },
+        setReadOnly: function (readOnly) {
+          pendingReadOnly = readOnly !== false;
+          if (!editor) return;
+          if (pendingReadOnly) readOnlyOn(); else readOnlyOff();
+        },
+        setTheme: function (theme) {
+          pendingTheme = theme || 'dark';
+          document.body.className = pendingTheme === 'light' ? 'light' : '';
+        },
+        getHtml: function () {
+          return editor ? editor.getData() : pendingHtml;
+        },
+        flush: function () {
+          postHtml();
+        },
+        focus: function () {
+          if (editor) editor.editing.view.focus();
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

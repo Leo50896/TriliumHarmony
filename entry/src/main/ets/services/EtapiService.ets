@@ -12,6 +12,16 @@ import { HttpService } from './HttpService';
 
 const MAX_CONCURRENT_NOTE_REQUESTS: number = 6;
 
+export class UrlBinary {
+  data: ArrayBuffer;
+  mime: string;
+
+  constructor(data: ArrayBuffer, mime: string) {
+    this.data = data;
+    this.mime = mime;
+  }
+}
+
 /**
  * Small ETAPI client for the drawer tree. It uses the ETAPI token from
  * `/api/login/token` directly in the Authorization header (no "Bearer").
@@ -147,28 +157,46 @@ export class EtapiService {
   }
 
   static async getNoteBinaryContent(session: AuthSession, noteId: string): Promise<ArrayBuffer> {
-    const baseUrl: string = EtapiService.normalizeBaseUrl(session.serverUrl);
-    const options: http.HttpRequestOptions = {
-      method: http.RequestMethod.GET,
-      header: {
-        'Authorization': session.accessToken,
-        'Accept': 'application/pdf, application/octet-stream, */*'
-      },
-      expectDataType: http.HttpDataType.ARRAY_BUFFER,
-      connectTimeout: 10000,
-      readTimeout: 30000
-    };
-    const response: http.HttpResponse = await HttpService.request(
-      `${baseUrl}/etapi/notes/${encodeURIComponent(noteId)}/content`,
-      options
-    );
-    if (response.responseCode < 200 || response.responseCode >= 300) {
-      throw new Error(`ETAPI_HTTP_${response.responseCode}`);
+    return (await EtapiService.fetchUrlBinary(session,
+      `${EtapiService.normalizeBaseUrl(session.serverUrl)}/etapi/notes/${encodeURIComponent(noteId)}/content`)).data;
+  }
+
+  static async fetchUrlBinary(session: AuthSession, url: string): Promise<UrlBinary> {
+    let absolute: string = url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      const base: string = EtapiService.normalizeBaseUrl(session.serverUrl);
+      absolute = url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
     }
-    if (response.result instanceof ArrayBuffer) {
-      return response.result;
+    const client: http.HttpRequest = http.createHttp();
+    try {
+      const response: http.HttpResponse = await client.request(absolute, {
+        method: http.RequestMethod.GET,
+        header: {
+          'Authorization': session.accessToken,
+          'Accept': 'image/*, application/octet-stream, */*'
+        },
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 10000,
+        readTimeout: 30000
+      });
+      if (response.responseCode !== 200 || !(response.result instanceof ArrayBuffer)) {
+        throw new Error(`ATTACHMENT_${response.responseCode}`);
+      }
+      let mime: string = 'image/jpeg';
+      const lower: string = absolute.toLowerCase();
+      if (lower.indexOf('.png') >= 0) {
+        mime = 'image/png';
+      } else if (lower.indexOf('.gif') >= 0) {
+        mime = 'image/gif';
+      } else if (lower.indexOf('.webp') >= 0) {
+        mime = 'image/webp';
+      } else if (lower.indexOf('.svg') >= 0) {
+        mime = 'image/svg+xml';
+      }
+      return new UrlBinary(response.result, mime);
+    } finally {
+      client.destroy();
     }
-    throw new Error('ETAPI_BINARY_INVALID');
   }
 
   static async getNoteContent(session: AuthSession, noteId: string): Promise<string> {    const baseUrl: string = EtapiService.normalizeBaseUrl(session.serverUrl);

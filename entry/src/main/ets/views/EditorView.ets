@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { AppIcon } from '../components/AppIcon';
 import { CodeBlock } from '../components/CodeBlock';
 import { FloatingToolbar } from '../components/FloatingToolbar';
@@ -22,6 +23,7 @@ import { BlockRichEditor } from '../components/BlockRichEditor';
 import { BlockTarget } from '../components/BlockTarget';
 import { BlockEditMode, BlockRendererRegistry, BlockRendererSpec } from '../components/BlockRenderer';
 import { ComplexBlockEditorHost } from '../components/ComplexBlockEditorHost';
+import { WebEditorView } from '../components/WebEditorView';
 import { AuthSession } from '../models/AuthModels';
 import { CachedNote } from '../models/CacheModels';
 import {
@@ -184,6 +186,10 @@ export struct EditorView {
   @State private modifiedLabel: string = '';
   @State private saveStatus: string = '';
   @State private renderVersion: number = 0;
+  @State private webEditing: boolean = false;
+  @State private webEditorContent: string = '';
+  @State private webSaveTick: number = 0;
+  private webPushTimer: number = -1;
   @State private rawContent: string = '';
   @State @Watch('onEditingStateChanged') private isEditing: boolean = false;
   @State @Watch('onEditingStateChanged') private isRichEditing: boolean = false;
@@ -694,7 +700,16 @@ export struct EditorView {
     this.noteColor = this.attributeValue(note, 'color');
     this.loadChildNotes();
     this.modifiedLabel = this.formatModified(note.dateModified);
-    this.rawContent = content;
+    const cleanContent: string = this.decodeHtmlValue(content);
+    this.rawContent = cleanContent;
+    this.webEditorContent = cleanContent;
+    const webNoteId: string = note.noteId;
+    this.hydrateWebImages(cleanContent, webNoteId).then((hydrated: string) => {
+      if (this.note !== null && this.note.noteId === webNoteId) {
+        this.webEditorContent = hydrated;
+      }
+    });
+    this.webEditing = false;
     this.editTitle = note.title;
     this.editContent = content;
     this.isSpreadsheet = note.type === 'spreadsheet';
@@ -1328,7 +1343,116 @@ export struct EditorView {
     }
   }
 
+  private isWebTextMode(): boolean {
+    return this.note !== null && this.note.type === 'text' && !this.note.isProtected &&
+      !this.isPdf && !this.isSpreadsheet && !this.markdownPreview;
+  }
+
+  private toggleWebEdit(): void {
+    if (this.webEditing) {
+      this.webEditing = false;
+      this.webSaveTick++;
+      this.saveStatus = '本地已保存';
+    } else {
+      this.webEditing = true;
+      this.saveStatus = '';
+    }
+  }
+
+  private decodeHtmlValue(value: string): string {
+    let decoded: string = value.trim();
+    for (let i = 0; i < 2; i++) {
+      if (decoded.length < 2 || !decoded.startsWith('"') || !decoded.endsWith('"')) {
+        break;
+      }
+      try {
+        const parsed: string = JSON.parse(decoded) as string;
+        if (typeof parsed === 'string') {
+          decoded = parsed;
+        } else {
+          break;
+        }
+      } catch (error) {
+        break;
+      }
+    }
+    decoded = decoded.replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
+      .replace(/\\u0026/gi, '&').replace(/\\"/g, '"');
+    if (decoded.startsWith('"') && decoded.endsWith('"')) {
+      decoded = decoded.substring(1, decoded.length - 1);
+    }
+    return decoded;
+  }
+
+  private async hydrateWebImages(content: string, noteId: string): Promise<string> {
+    if (content.indexOf('<img') < 0) {
+      return content;
+    }
+    const active: AuthSession | null = this.session ?? await this.resolveSession();
+    if (active === null) {
+      return content;
+    }
+    let html: string = content;
+    const pattern: RegExp = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+    const sources: string[] = [];
+    let match: RegExpExecArray | null = pattern.exec(content);
+    while (match !== null) {
+      const src: string = match[1];
+      if ((src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/') ||
+        src.startsWith('api/')) && sources.indexOf(src) < 0) {
+        sources.push(src);
+      }
+      match = pattern.exec(content);
+    }
+    for (let i = 0; i < sources.length; i++) {
+      const src: string = sources[i];
+      try {
+        const binary = await EtapiService.fetchUrlBinary(active, src);
+        const base64: string = new util.Base64Helper().encodeToStringSync(
+          new Uint8Array(binary.data));
+        html = html.split(src).join(`data:${binary.mime};base64,${base64}`);
+      } catch (error) {
+        console.error(`WEB_IMAGE_FAILED ${src}`);
+      }
+    }
+    return html;
+  }
+
+  private async onWebHtml(html: string): Promise<void> {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    const cleanHtml: string = this.decodeHtmlValue(html);
+    if (context === null || this.note === null || cleanHtml.length === 0) {
+      return;
+    }
+    this.rawContent = cleanHtml;
+    this.blocks = TriliumCodec.parseToModel(cleanHtml, 'html');
+    this.wordCount = HtmlContentParser.plainText(this.blocks).replace(/[\s☐☑]/g, '').length;
+    try {
+      await LocalStore.updateNoteContent(context, SessionStore.accountKey(),
+        this.note.noteId, cleanHtml);
+      this.saveStatus = '本地已保存';
+      if (this.webPushTimer >= 0) {
+        clearTimeout(this.webPushTimer);
+      }
+      this.webPushTimer = setTimeout(() => {
+        this.pushInBackground();
+      }, 1200);
+    } catch (error) {
+      this.saveStatus = '待同步';
+    }
+  }
+
+  private onWebLink(noteId: string): void {
+    if (noteId.length > 0) {
+      this.openChildNote(noteId);
+    }
+  }
+
   private toggleEdit(): void {
+    if (this.isWebTextMode()) {
+      this.toggleWebEdit();
+      return;
+    }
     if (this.isEditing || this.isRichEditing) {
       this.cancelEdit();
       return;
@@ -2577,7 +2701,8 @@ export struct EditorView {
       }
 
       if (this.isEditable()) {
-        Text(this.isEditing || this.isRichEditing ? '取消编辑' : '编辑')
+        Text(this.isWebTextMode() ? (this.webEditing ? '保存' : '编辑') :
+          (this.isEditing || this.isRichEditing ? '取消编辑' : '编辑'))
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.primary_text'))
@@ -3859,6 +3984,25 @@ export struct EditorView {
                     .fontSize(13)
                     .lineHeight(22)
                     .fontColor($r('app.color.text_secondary'))
+                } else if (this.isWebTextMode()) {
+                  WebEditorView({
+                    content: this.webEditorContent,
+                    readOnly: !this.webEditing,
+                    saveTick: this.webSaveTick,
+                    noteId: this.note.noteId,
+                    onHtml: (html: string) => {
+                      this.onWebHtml(html);
+                    },
+                    onLink: (noteId: string) => {
+                      this.onWebLink(noteId);
+                    },
+                    onError: (message: string) => {
+                      console.error(`WEB_EDITOR_ERROR ${message}`);
+                    }
+                  })
+                  .width('100%')
+                  .height(720)
+                  .margin({ left: -22, right: -22 })
                 } else if (this.blocks.length === 0) {
                   Text('这篇笔记还没有正文。')
                     .fontSize(14)
