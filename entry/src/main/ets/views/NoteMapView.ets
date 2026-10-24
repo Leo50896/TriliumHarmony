@@ -331,13 +331,39 @@ export struct NoteMapView {
   private pushData(): void {
     if (!this.pageReady || !this.dataReady) return;
     const rich: WebMapPayload = new WebMapPayload();
-    rich.nodes = this.payload.nodes;
-    rich.links = this.layoutMode === 'tree' ?
-      this.payload.links.filter((link: WebMapLink) => link.kind === 'parent') : this.payload.links;
+    if (this.layoutMode === 'tree') {
+      rich.nodes = this.payload.nodes;
+      rich.links = this.payload.links.filter((link: WebMapLink) => link.kind === 'parent');
+    } else {
+      // Link map is an ego graph around the currently selected note. Only its
+      // direct parent/children and relation/body targets are included; pulling
+      // in the whole note tree here is what produced long, unrelated lines.
+      const focus: string = this.selectedNoteId.length > 0 ? this.selectedNoteId : 'root';
+      const ids: Set<string> = new Set();
+      ids.add(focus);
+      const activeLinks: WebMapLink[] = [];
+      const seen: Set<string> = new Set();
+      for (let i = 0; i < this.payload.links.length; i++) {
+        const link: WebMapLink = this.payload.links[i];
+        if (link.source !== focus && link.target !== focus) {
+          continue;
+        }
+        const key: string = `${link.kind}|${link.source}|${link.target}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        activeLinks.push(link);
+        ids.add(link.source);
+        ids.add(link.target);
+      }
+      rich.links = activeLinks;
+      rich.nodes = this.payload.nodes.filter((node: WebMapNode) => ids.has(node.id));
+    }
     rich.dark = AppStorage.get<number>('colorMode') === 0;
+    this.nodeCount = rich.nodes.length;
     const json: string = JSON.stringify(rich);
     const encoded: string = JSON.stringify(json);
-    this.controller.runJavaScript(`renderMapJson(${encoded}); focusMapRoot();`);
+    const focus: string = this.layoutMode === 'tree' ? 'focusMapRoot();' : 'fitMap(true);';
+    this.controller.runJavaScript(`renderMapJson(${encoded}); ${focus}`);
   }
 
   private setMode(mode: string): void {

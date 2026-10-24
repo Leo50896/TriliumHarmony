@@ -237,7 +237,7 @@
       minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
     });
     var w = svg.node().clientWidth, h = svg.node().clientHeight;
-    var pad = 40;
+    var pad = 90;
     var k = Math.min((w - pad * 2) / Math.max(1, maxX - minX), (h - pad * 2) / Math.max(1, maxY - minY), 2);
     var tx = (w - (minX + maxX) * k) / 2;
     var ty = (h - (minY + maxY) * k) / 2;
