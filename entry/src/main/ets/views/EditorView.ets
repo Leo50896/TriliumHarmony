@@ -1130,6 +1130,15 @@ export struct EditorView {
     this.commitReplacement(target, next);
   }
 
+  private autoSaveComplexEdit(next: ContentBlock): void {
+    const block: ContentBlock | null = this.complexEditBlock;
+    if (block === null) {
+      return;
+    }
+    const target: BlockTarget = BlockTarget.forBlock(block.id, block.kind);
+    this.commitReplacement(target, next);
+  }
+
   private requestCodeEdit(block: ContentBlock): void {
     if (block.kind !== ContentBlockKind.CODE || this.note === null || this.isSaving ||
       this.isEditing || this.isRichEditing) {
@@ -4022,6 +4031,9 @@ export struct EditorView {
           startInRawMode: this.complexEditStartRaw,
           onSave: (nextBlock: ContentBlock) => {
             this.saveComplexEdit(nextBlock);
+          },
+          onAutoSave: (nextBlock: ContentBlock) => {
+            this.autoSaveComplexEdit(nextBlock);
           },
           onCancel: () => {
             this.closeComplexEdit();

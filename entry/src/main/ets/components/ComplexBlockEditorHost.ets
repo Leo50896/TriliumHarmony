@@ -1,3 +1,5 @@
+import { common } from '@kit.AbilityKit';
+import { window } from '@kit.ArkUI';
 import {
   ContentBlock,
   ContentBlockKind,
@@ -57,6 +59,7 @@ export struct ComplexBlockEditorHost {
   @Prop block: ContentBlock = new ContentBlock(ContentBlockKind.PARAGRAPH);
   @Prop startInRawMode: boolean = false;
   onSave: (nextBlock: ContentBlock) => void = () => {};
+  onAutoSave: (nextBlock: ContentBlock) => void = () => {};
   onCancel: () => void = () => {};
 
   @State private rawMode: boolean = false;
@@ -74,10 +77,13 @@ export struct ComplexBlockEditorHost {
   @State private calloutTitle: string = '';
   @State private calloutChildren: ContentBlock[] = [];
   @State private calloutChildTick: number = 0;
+  @State private keyboardInset: number = 0;
+  private tableScroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.rawHtml = this.block.raw;
     this.rawMode = this.startInRawMode;
+    this.bindKeyboard();
     if (this.block.callout !== null) {
       this.calloutType = this.block.callout.type;
       this.calloutTitle = this.block.callout.title;
@@ -106,6 +112,38 @@ export struct ComplexBlockEditorHost {
       this.widthPx = image.width;
       this.heightPx = image.height;
     }
+  }
+
+  private bindKeyboard(): void {
+    const context: common.UIAbilityContext | null = this.hostContext();
+    if (context === null) {
+      return;
+    }
+    window.getLastWindow(context).then((mainWindow: window.Window) => {
+      mainWindow.on('keyboardHeightChange', (height: number) => {
+        this.keyboardInset = height > 0 ? px2vp(height) : 0;
+      });
+    }).catch(() => {
+      // Keyboard avoidance is best-effort.
+    });
+  }
+
+  private hostContext(): common.UIAbilityContext | null {
+    const context: common.Context | undefined = this.getUIContext().getHostContext();
+    return context === undefined ? null : context as common.UIAbilityContext;
+  }
+
+  private scrollTableTo(rowIndex: number): void {
+    setTimeout(() => {
+      try {
+        this.tableScroller.scrollTo({
+          xOffset: 0,
+          yOffset: Math.max(0, rowIndex * 63 - 90)
+        });
+      } catch (error) {
+        // Scroller may not be attached yet.
+      }
+    }, 80);
   }
 
   private title(): string {
@@ -210,7 +248,7 @@ export struct ComplexBlockEditorHost {
     }
   }
 
-  private saveTable(): void {
+  private buildTableBlock(): ContentBlock | null {
     this.syncRowspans();
     const rows: TableRow[] = [];
     for (let r = 0; r < this.tableRows.length; r++) {
@@ -251,7 +289,21 @@ export struct ComplexBlockEditorHost {
     next.children = this.block.children;
     next.dirty = true;
     next.serializeMode = 'model';
-    this.onSave(next);
+    return next;
+  }
+
+  private saveTable(): void {
+    const next: ContentBlock | null = this.buildTableBlock();
+    if (next !== null) {
+      this.onSave(next);
+    }
+  }
+
+  private autoSaveTable(): void {
+    const next: ContentBlock | null = this.buildTableBlock();
+    if (next !== null) {
+      this.onAutoSave(next);
+    }
   }
 
   private calloutAccent(type: string): string {
@@ -486,7 +538,7 @@ export struct ComplexBlockEditorHost {
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
 
-      Scroll() {
+      Scroll(this.tableScroller) {
         Column({ space: 1 }) {
           ForEach(this.tableRows, (row: EditableRow, rowIndex: number) => {
             Row({ space: 1 }) {
@@ -508,6 +560,12 @@ export struct ComplexBlockEditorHost {
                       .width('100%')
                       .height(32)
                       .fontSize(12)
+                      .onFocus(() => {
+                        this.scrollTableTo(rowIndex);
+                      })
+                      .onBlur(() => {
+                        this.autoSaveTable();
+                      })
                       .onChange((value: string) => {
                         cell.text = value;
                       })
@@ -540,7 +598,8 @@ export struct ComplexBlockEditorHost {
           }, (row: EditableRow, rowIndex: number) => `table-row-${rowIndex}`)
         }
       }
-      .scrollable(ScrollDirection.Horizontal)
+      .scrollable(ScrollDirection.Vertical)
+      .padding({ bottom: this.keyboardInset })
       .scrollBar(BarState.Off)
       .width('100%')
       .layoutWeight(1)
