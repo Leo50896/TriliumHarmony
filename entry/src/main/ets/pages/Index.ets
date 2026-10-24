@@ -10,7 +10,6 @@ import { ReadingPositionStore } from '../services/ReadingPositionStore';
 import { BiometricService } from '../services/BiometricService';
 import { StateKeys } from '../constants/StateKeys';
 import { font } from '@kit.ArkUI';
-import { CodecGoldenTests } from '../utils/codec/CodecGoldenTests';
 
 /**
  * App entry and session gate.
@@ -61,11 +60,6 @@ struct Index {
     }
     SessionStore.installDefaults();
     AppStorage.setOrCreate(StateKeys.BACK_AVAILABLE, false);
-    try {
-      CodecGoldenTests.runAll();
-    } catch (error) {
-      console.error(`CODEC_GOLDEN RUN_FAILED ${JSON.stringify(error)}`);
-    }
     this.initializeApp();
   }
 

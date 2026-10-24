@@ -18,6 +18,7 @@ import { TriliumTable } from '../components/TriliumTable';
 import { NativeSheetView } from '../components/NativeSheetView';
 import { PdfViewer } from '../components/PdfViewer';
 import { TriliumCallout } from '../components/TriliumCallout';
+import { BlockRichEditor } from '../components/BlockRichEditor';
 import { AuthSession } from '../models/AuthModels';
 import { CachedNote } from '../models/CacheModels';
 import {
@@ -39,6 +40,7 @@ import { SyncService } from '../services/SyncService';
 import { TriliumLinkRouter } from '../services/TriliumLinkRouter';
 import { SheetParser } from '../utils/SheetParser';
 import { AttributeVisuals } from '../utils/AttributeVisuals';
+import { TriliumCodec } from '../utils/codec/TriliumCodec';
 
 class AttributeRow {
   attributeId: string;
@@ -187,6 +189,8 @@ export struct EditorView {
   @State private editorViewportHeight: number = 0;
   @State private fullViewportHeight: number = 0;
   @State private keyboardInset: number = 0;
+  @State private editingBlockId: string = '';
+  @State private blockCommitTick: number = 0;
   @State private readingProgress: number = 0;
   @State private readingContentHeight: number = 0;
   @State private readingViewportHeight: number = 0;
@@ -199,6 +203,7 @@ export struct EditorView {
   private scroller: Scroller = new Scroller();
   private richController: RichEditorController = new RichEditorController();
   private richLoaded: boolean = false;
+  private pendingBlockEditId: string = '';
 
   private onEditingStateChanged(): void {
     AppStorage.setOrCreate(StateKeys.EDITOR_EDITING, this.isEditing || this.isRichEditing);
@@ -226,6 +231,9 @@ export struct EditorView {
     window.getLastWindow(context).then((mainWindow: window.Window) => {
       mainWindow.on('keyboardHeightChange', (height: number) => {
         this.keyboardInset = height > 0 ? px2vp(height) : 0;
+        if (height === 0 && this.editingBlockId.length > 0) {
+          this.blockCommitTick++;
+        }
         this.recomputeToolbarY();
       });
     }).catch(() => {
@@ -447,6 +455,7 @@ export struct EditorView {
     this.isLoading = true;
     this.isEditing = false;
     this.isRichEditing = false;
+    this.editingBlockId = '';
     this.richLoaded = false;
     this.richController = new RichEditorController();
     try {
@@ -702,8 +711,12 @@ export struct EditorView {
         (language.indexOf('markdown') >= 0 || /^(#{1,6}\s|```)/m.test(content));
       const html: string = markdownPreview ? MarkdownParser.toHtml(content) : content;
       this.markdownPreview = markdownPreview;
-      this.blocks = HtmlContentParser.parse(html,
-        markdownPreview ? 'text' : note.type, markdownPreview ? 'text/html' : note.mime);
+      if (!markdownPreview && note.type === 'text') {
+        this.blocks = TriliumCodec.parseToModel(html, 'html');
+      } else {
+        this.blocks = HtmlContentParser.parse(html,
+          markdownPreview ? 'text' : note.type, markdownPreview ? 'text/html' : note.mime);
+      }
       this.applyReferenceTitles();
       this.wordCount = HtmlContentParser.plainText(this.blocks).replace(/[\s☐☑]/g, '').length;
     }
@@ -1009,6 +1022,134 @@ export struct EditorView {
       return false;
     }
     return true;
+  }
+
+  private canBlockEdit(block: ContentBlock): boolean {
+    if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
+      this.isEditing || this.isRichEditing || this.isSaving || this.isSpreadsheet || this.isPdf) {
+      return false;
+    }
+    return block.id.length > 0 &&
+      (block.kind === ContentBlockKind.PARAGRAPH || block.kind === ContentBlockKind.HEADING);
+  }
+
+  private requestBlockEdit(block: ContentBlock): void {
+    if (!this.canBlockEdit(block) || this.editingBlockId === block.id) {
+      return;
+    }
+    if (this.editingBlockId.length > 0) {
+      this.pendingBlockEditId = block.id;
+      this.getUIContext().getFocusController().clearFocus();
+      setTimeout(() => {
+        if (this.editingBlockId.length === 0) {
+          this.beginBlockEdit(this.pendingBlockEditId);
+        }
+      }, 180);
+      return;
+    }
+    this.beginBlockEdit(block.id);
+  }
+
+  private beginBlockEdit(blockId: string): void {
+    if (blockId.length === 0) {
+      return;
+    }
+    this.pendingBlockEditId = '';
+    this.editingBlockId = blockId;
+  }
+
+  private blockText(block: ContentBlock): string {
+    let text: string = '';
+    for (let i = 0; i < block.segments.length; i++) {
+      text += block.segments[i].text;
+    }
+    return text;
+  }
+
+  private segmentSignature(segments: InlineSegment[]): string {
+    let value: string = '';
+    for (let i = 0; i < segments.length; i++) {
+      const segment: InlineSegment = segments[i];
+      value += `${segment.text}|${segment.bold ? 1 : 0}${segment.italic ? 1 : 0}` +
+        `${segment.code ? 1 : 0}|${segment.href};`;
+    }
+    return value;
+  }
+
+  private commitBlockEdit(blockId: string, segments: InlineSegment[], text: string): void {
+    if (this.editingBlockId !== blockId) {
+      return;
+    }
+    this.editingBlockId = '';
+    let block: ContentBlock | null = null;
+    for (let i = 0; i < this.blocks.length; i++) {
+      if (this.blocks[i].id === blockId) {
+        block = this.blocks[i];
+        break;
+      }
+    }
+    if (block === null) {
+      return;
+    }
+    if (text === this.blockText(block) &&
+      this.segmentSignature(segments) === this.segmentSignature(block.segments)) {
+      return;
+    }
+
+    const replacement: ContentBlock = new ContentBlock(block.kind, text, block.level,
+      block.codeLines, block.language, segments, block.listItems, block.table, block.image,
+      block.listMarkers, block.callout, block.include, block.listLevels, block.indent,
+      block.quoteBlocks, block.id, block.raw, block.source);
+    replacement.attrs = block.attrs;
+    replacement.children = block.children;
+    replacement.dirty = true;
+    try {
+      this.blocks = TriliumCodec.replaceBlock(this.blocks, blockId, replacement);
+      const nextRaw: string = TriliumCodec.serializeToRaw(this.blocks, 'html');
+      this.rawContent = nextRaw;
+      this.editContent = nextRaw;
+      if (this.isOffline) {
+        this.notify('修改已暂存，联网后可保存');
+        return;
+      }
+      this.saveBlockContent(nextRaw);
+    } catch (error) {
+      console.error(`BLOCK_COMMIT_FAIL ${JSON.stringify(error)}`);
+    }
+  }
+
+  private async saveBlockContent(content: string): Promise<void> {
+    if (this.note === null || this.isSaving) {
+      this.notify('当前无法保存，请稍后重试');
+      return;
+    }
+    if (this.session === null) {
+      this.session = await this.resolveSession();
+    }
+    if (this.session === null) {
+      this.notify('当前无法保存，请稍后重试');
+      return;
+    }
+    const targetId: string = this.note.noteId;
+    this.isSaving = true;
+    try {
+      console.info(`BLOCK_SAVE_START target=${targetId} length=${content.length}`);
+      await EtapiService.updateNoteContent(this.session, targetId, content);
+      console.info(`BLOCK_SAVE_OK target=${targetId}`);
+      this.isEditing = false;
+      this.blocks = this.blocks.slice();
+      this.wordCount = HtmlContentParser.plainText(this.blocks).replace(/[\s☐☑]/g, '').length;
+      this.notify('段落已保存');
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_401') {
+        this.onSessionExpired();
+        this.notify('登录状态已失效');
+      } else {
+        this.notify('保存失败，请检查网络后重试');
+      }
+    } finally {
+      this.isSaving = false;
+    }
   }
 
   private toggleEdit(): void {
@@ -1829,16 +1970,35 @@ export struct EditorView {
   private ContentBlockView(block: ContentBlock) {
     if (block.kind === ContentBlockKind.HEADING) {
       Column() {
-        InlineTextView({
-          segments: block.segments,
-          fontSize: this.readerSize(block.level === 1 ? 27 : (block.level === 2 ? 23 : 20)),
-          lineHeight: this.readerSize(block.level === 1 ? 36 : 31),
-          color: $r('app.color.text_primary'),
-          weight: FontWeight.Medium,
-          onLink: (href: string) => {
-            this.openLink(href);
+        if (this.editingBlockId === block.id) {
+          BlockRichEditor({
+            segments: block.segments,
+            fontSize: this.readerSize(block.level === 1 ? 27 : (block.level === 2 ? 23 : 20)),
+            lineHeight: this.readerSize(block.level === 1 ? 36 : 31),
+            heading: true,
+            commitTick: this.blockCommitTick,
+            onCommit: (segments: InlineSegment[], text: string) => {
+              this.commitBlockEdit(block.id, segments, text);
+            }
+          })
+        } else {
+          Column() {
+            InlineTextView({
+              segments: block.segments,
+              fontSize: this.readerSize(block.level === 1 ? 27 : (block.level === 2 ? 23 : 20)),
+              lineHeight: this.readerSize(block.level === 1 ? 36 : 31),
+              color: $r('app.color.text_primary'),
+              weight: FontWeight.Medium,
+              onLink: (href: string) => {
+                this.openLink(href);
+              },
+              onTap: () => {
+                this.requestBlockEdit(block);
+              }
+            })
           }
-        })
+          .width('100%')
+        }
       }
       .width('100%')
       .margin({ top: 7, bottom: 1 })
@@ -2093,15 +2253,34 @@ export struct EditorView {
       }
     } else {
       Column() {
-        InlineTextView({
-          segments: block.segments,
-          fontSize: this.readerSize(17),
-          lineHeight: this.readerSize(28),
-          color: $r('app.color.text_primary'),
-          onLink: (href: string) => {
-            this.openLink(href);
+        if (this.editingBlockId === block.id) {
+          BlockRichEditor({
+            segments: block.segments,
+            fontSize: this.readerSize(17),
+            lineHeight: this.readerSize(28),
+            heading: false,
+            commitTick: this.blockCommitTick,
+            onCommit: (segments: InlineSegment[], text: string) => {
+              this.commitBlockEdit(block.id, segments, text);
+            }
+          })
+        } else {
+          Column() {
+            InlineTextView({
+              segments: block.segments,
+              fontSize: this.readerSize(17),
+              lineHeight: this.readerSize(28),
+              color: $r('app.color.text_primary'),
+              onLink: (href: string) => {
+                this.openLink(href);
+              },
+              onTap: () => {
+                this.requestBlockEdit(block);
+              }
+            })
           }
-        })
+          .width('100%')
+        }
       }
       .width('100%')
       .padding({ left: block.indent })
@@ -3361,6 +3540,14 @@ export struct EditorView {
                   .width('100%')
                 }
                 this.ChildNotesSection()
+                if (this.editingBlockId.length > 0) {
+                  Column()
+                    .width('100%')
+                    .height(140)
+                    .onClick(() => {
+                      this.getUIContext().getFocusController().clearFocus();
+                    })
+                }
               }
             }
             .width('100%')
@@ -3369,7 +3556,7 @@ export struct EditorView {
               left: this.isSpreadsheet ? 0 : 22,
               right: this.isSpreadsheet ? 0 : 22,
               top: 18,
-              bottom: 142
+              bottom: 142 + (this.keyboardInset > 0 ? this.keyboardInset : 0)
             })
             .alignItems(HorizontalAlign.Start)
           }

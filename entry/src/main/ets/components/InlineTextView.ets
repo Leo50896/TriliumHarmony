@@ -20,6 +20,7 @@ export struct InlineTextView {
   @Prop weight: FontWeight = FontWeight.Normal;
   @Prop italic: boolean = false;
   onLink: (href: string) => void = () => {};
+  onTap: () => void = () => {};
 
   @State private pressedKey: string = '';
   @StorageLink('TEXT_SELECTION_DISMISS') @Watch('dismissSelection') private dismissTick: number = 0;
@@ -136,6 +137,14 @@ export struct InlineTextView {
     .onClick(() => {
       const tick: number = AppStorage.get<number>('TEXT_SELECTION_DISMISS') ?? 0;
       AppStorage.setOrCreate('TEXT_SELECTION_DISMISS', tick + 1);
+      if (this.pressedKey.length === 0) {
+        this.onTap();
+      }
     })
+    .gesture(TapGesture({ count: 1 }).onAction(() => {
+      if (this.pressedKey.length === 0) {
+        this.onTap();
+      }
+    }))
   }
 }
