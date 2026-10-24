@@ -189,6 +189,7 @@ export struct EditorView {
   @State private webEditing: boolean = false;
   @State private webEditorContent: string = '';
   @State private webCodeHtml: string = '';
+  @State private webMediaHtml: string = '';
   @State private webSaveTick: number = 0;
   private webPushTimer: number = -1;
   @State private rawContent: string = '';
@@ -547,6 +548,22 @@ export struct EditorView {
         return;
       }
 
+      if (local !== null && !this.isPdfNote(local.note)) {
+        // Local-first: never fetch textual content from the network on open.
+        // An uncached note is shown empty until the next sync fills the row.
+        this.applyNote(local.note, local.content);
+        this.saveStatus = '待同步';
+        this.loadedNoteId = local.note.noteId;
+        this.isLoading = false;
+        return;
+      }
+
+      if (local === null) {
+        this.errorMessage = '本地暂无这篇笔记，请先联网同步。';
+        this.isLoading = false;
+        return;
+      }
+
       if (this.session === null) {
         this.session = await this.resolveSession();
       }
@@ -710,6 +727,9 @@ export struct EditorView {
         .replace(/>/g, '&gt;');
       this.webCodeHtml = `<pre><code class="language-${language.length > 0 ? language : 'plaintext'}">` +
         `${escaped}</code></pre>`;
+    }
+    if (note.type === 'image' || note.type === 'file') {
+      this.loadWebMedia(note);
     }
     const webNoteId: string = note.noteId;
     this.hydrateWebImages(cleanContent, webNoteId).then((hydrated: string) => {
@@ -1392,6 +1412,29 @@ export struct EditorView {
       decoded = decoded.substring(1, decoded.length - 1);
     }
     return decoded;
+  }
+
+  private async loadWebMedia(note: TriliumNote): Promise<void> {
+    const active: AuthSession | null = this.session ?? await this.resolveSession();
+    if (active === null) {
+      return;
+    }
+    try {
+      const binary = await EtapiService.fetchUrlBinary(active,
+        `/etapi/notes/${encodeURIComponent(note.noteId)}/content`);
+      const base64: string = new util.Base64Helper().encodeToStringSync(
+        new Uint8Array(binary.data));
+      const mime: string = note.mime.length > 0 ? note.mime : binary.mime;
+      if (note.type === 'image') {
+        this.webMediaHtml = `<p><img src="data:${mime};base64,${base64}" alt=""></p>`;
+      } else {
+        const name: string = note.title.replace(/"/g, '&quot;');
+        this.webMediaHtml = `<p><a href="data:${mime};base64,${base64}" download="${name}">` +
+          `下载 ${name}</a></p>`;
+      }
+    } catch (error) {
+      this.webMediaHtml = '<p>附件加载失败</p>';
+    }
   }
 
   private async hydrateWebImages(content: string, noteId: string): Promise<string> {
@@ -3967,10 +4010,23 @@ export struct EditorView {
                   .backgroundColor($r('app.color.bg_secondary'))
                   .borderRadius(12)
                 } else if ((this.note.type === 'image' || this.note.type === 'file') && !this.isPdf) {
-                  Text('该笔记是图片/文件类型，当前版本暂不支持内容预览。')
-                    .fontSize(13)
-                    .lineHeight(22)
-                    .fontColor($r('app.color.text_secondary'))
+                  WebEditorView({
+                    content: this.webMediaHtml,
+                    readOnly: true,
+                    saveTick: 0,
+                    noteId: this.note.noteId,
+                    onHtml: (html: string) => {
+                    },
+                    onLink: (noteId: string) => {
+                      this.onWebLink(noteId);
+                    },
+                    onError: (message: string) => {
+                      console.error(`MEDIA_WEB_ERROR ${message}`);
+                    }
+                  })
+                  .width('100%')
+                  .height(720)
+                  .margin({ left: -22, right: -22 })
                 } else if (this.isPdf) {
                   PdfViewer({
                     sourceBuffer: this.pdfBuffer,
