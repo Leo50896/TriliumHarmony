@@ -183,6 +183,7 @@ export struct EditorView {
   @State private wordCount: number = 0;
   @State private modifiedLabel: string = '';
   @State private saveStatus: string = '';
+  @State private renderVersion: number = 0;
   @State private rawContent: string = '';
   @State @Watch('onEditingStateChanged') private isEditing: boolean = false;
   @State @Watch('onEditingStateChanged') private isRichEditing: boolean = false;
@@ -1245,6 +1246,7 @@ export struct EditorView {
   private commitReplacement(target: BlockTarget, replacement: ContentBlock): void {
     try {
       this.blocks = TriliumCodec.replaceBlock(this.blocks, target.blockId, replacement);
+      this.renderVersion++;
       const nextRaw: string = TriliumCodec.serializeToRaw(this.blocks, 'html');
       this.rawContent = nextRaw;
       this.editContent = nextRaw;
@@ -1324,6 +1326,7 @@ export struct EditorView {
       console.info(`LOCAL_SAVE_OK target=${targetId}`);
       this.isEditing = false;
       this.blocks = this.blocks.slice();
+      this.renderVersion++;
       this.wordCount = HtmlContentParser.plainText(this.blocks).replace(/[\s☐☑]/g, '').length;
       this.saveStatus = '本地已保存';
       this.notify('本地已保存');
@@ -3896,7 +3899,8 @@ export struct EditorView {
                   Column({ space: 18 }) {
                     ForEach(this.blocks, (block: ContentBlock, index: number) => {
                       this.ContentBlockView(block)
-                    }, (block: ContentBlock, index: number) => `${block.kind}-${index}`)
+                    }, (block: ContentBlock, index: number) =>
+                      `${block.id}-${index}-${this.renderVersion}`)
                   }
                   .width('100%')
                 }
