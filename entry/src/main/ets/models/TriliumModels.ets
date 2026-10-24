@@ -96,9 +96,11 @@ export class DrawerTreeNode {
   selected: boolean;
   type: string;
   isProtected: boolean;
+  iconClass: string;
 
   constructor(noteId: string, title: string, level: number, hasChildren: boolean,
-    expanded: boolean, selected: boolean, type: string, isProtected: boolean) {
+    expanded: boolean, selected: boolean, type: string, isProtected: boolean,
+    iconClass: string = '') {
     this.noteId = noteId;
     this.title = title;
     this.level = level;
@@ -107,6 +109,7 @@ export class DrawerTreeNode {
     this.selected = selected;
     this.type = type;
     this.isProtected = isProtected;
+    this.iconClass = iconClass;
   }
 }
 

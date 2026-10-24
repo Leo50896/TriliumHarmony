@@ -3,18 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="boxicons.min.css">
 <style>
+  @font-face {
+    font-family: 'boxicons';
+    src: url('boxicons.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+  }
   :root { --bg:#1e1f22; --text:#e6e6e6; --muted:#9aa0a6; --line:#303338; --accent:#2f6fed; --hover:#2a2d32; }
   html,body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system,"HarmonyOS Sans SC","Segoe UI",sans-serif; overflow-x:hidden; }
   body.light { --bg:#fafafa; --text:#202124; --muted:#6b7280; --line:#e3e6ea; --accent:#2563eb; --hover:#f0f2f5; }
   #tree { padding:4px 8px 18px 8px; }
-  .row { display:flex; align-items:center; min-height:42px; padding:0 8px; border-radius:9px; cursor:pointer; box-sizing:border-box; }
+  .row { display:flex; align-items:center; min-height:38px; padding:0 8px; border-radius:8px; cursor:pointer; box-sizing:border-box; }
   .row:hover { background:var(--hover); }
   .row.selected { background:var(--accent); color:#fff; }
-  .chev { width:22px; flex:0 0 22px; color:var(--muted); font-size:13px; text-align:center; }
+  .chev { width:20px; flex:0 0 20px; color:var(--muted); font-size:18px; line-height:20px; text-align:center; }
   .row.selected .chev { color:#dbe7ff; }
-  .glyph { width:22px; flex:0 0 22px; font-size:16px; text-align:center; opacity:.9; }
-  .label { flex:1; min-width:0; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:4px; }
+  .icon { width:20px; flex:0 0 20px; font-size:20px; line-height:20px; text-align:center; color:var(--muted); }
+  .row.selected .icon { color:#fff; }
+  .label { flex:1; min-width:0; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:7px; }
   .row.selected .label { color:#fff; }
   .empty { padding:36px 20px; color:var(--muted); text-align:center; font-size:13px; }
 </style>
@@ -24,65 +33,71 @@
   <script>
     (function () {
       var rows = [];
-      var selected = '';
-      function bridge(name, a, b) {
+      var active = '';
+      function bridge(name, value) {
         try {
           if (window.NativeTreeBridge && typeof window.NativeTreeBridge[name] === 'function') {
-            window.NativeTreeBridge[name](a, b || '');
+            window.NativeTreeBridge[name](value);
           }
         } catch (e) {}
       }
-      function rowHtml(item) {
-        var pad = 8 + Math.max(0, item.level || 0) * 15;
-        var selectedClass = item.selected ? ' selected' : '';
-        var chev = item.hasChildren ? (item.expanded ? '▾' : '▸') : '';
-        var glyph = item.type === 'book' ? '📁' : (item.type === 'image' || item.type === 'file' ? '📄' : '📝');
-        return '<div class="row' + selectedClass + '" data-id="' + encodeURIComponent(item.noteId) +
-          '" data-title="' + encodeURIComponent(item.title || '') + '" data-children="' +
-          (item.hasChildren ? '1' : '0') + '" style="padding-left:' + pad + 'px">' +
-          '<div class="chev">' + chev + '</div><div class="glyph">' + glyph + '</div>' +
-          '<div class="label">' + escapeHtml(item.title || '') + '</div></div>';
-      }
-      function escapeHtml(value) {
+      function esc(value) {
         return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
           .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
+      function iconClass(item) {
+        var value = (item.iconClass || '').trim();
+        if (value) {
+          if (value.indexOf('bx ') !== 0 && value.indexOf('bxs ') !== 0 &&
+              value.indexOf('bxl ') !== 0) {
+            value = 'bx ' + value.replace(/^bx-/, 'bx-');
+          }
+          return value;
+        }
+        if (item.noteId === 'root') return 'bx bx-home';
+        if (item.type === 'book') return 'bx bx-folder';
+        if (item.type === 'code') return 'bx bx-code-alt';
+        return 'bx bx-file';
+      }
+      function row(item) {
+        var pad = 8 + Math.max(0, item.level || 0) * 16;
+        var selected = item.noteId === active ? ' selected' : '';
+        var chev = item.hasChildren ? (item.expanded ? 'bx bx-chevron-down' : 'bx bx-chevron-right') : '';
+        return '<div class="row' + selected + '" data-id="' + encodeURIComponent(item.noteId) +
+          '" style="padding-left:' + pad + 'px">' +
+          '<div class="chev">' + (chev ? '<i class="' + chev + '"></i>' : '') + '</div>' +
+          '<div class="icon"><i class="' + iconClass(item) + '"></i></div>' +
+          '<div class="label">' + esc(item.title || '') + '</div></div>';
+      }
       function render() {
-        var root = document.getElementById('tree');
+        var host = document.getElementById('tree');
         if (!rows || rows.length === 0) {
-          root.innerHTML = '<div class="empty">暂无笔记</div>';
+          host.innerHTML = '<div class="empty">\u6682\u65e0\u7b14\u8bb0</div>';
           return;
         }
-        root.innerHTML = rows.map(rowHtml).join('');
-        Array.prototype.forEach.call(root.querySelectorAll('.row'), function (el) {
-          el.addEventListener('click', function (event) {
-            var id = decodeURIComponent(el.getAttribute('data-id') || '');
-            var title = decodeURIComponent(el.getAttribute('data-title') || '');
-            var hasChildren = el.getAttribute('data-children') === '1';
-            var chev = el.querySelector('.chev');
-            var left = el.getBoundingClientRect().left;
-            if (hasChildren && event.clientX - left < 30) {
-              bridge('toggleNote', id);
-              return;
-            }
-            bridge('selectNote', id, title);
+        host.innerHTML = rows.map(row).join('');
+        Array.prototype.forEach.call(host.querySelectorAll('.row'), function (el) {
+          el.addEventListener('click', function () {
+            bridge('onNoteSelected', decodeURIComponent(el.getAttribute('data-id') || ''));
           });
         });
       }
-      window.NativeTree = {
-        render: function (json) {
-          try { rows = JSON.parse(json || '[]'); selected = ''; render(); }
-          catch (e) { rows = []; render(); }
-        },
-        setTheme: function (theme) {
-          document.body.className = theme === 'light' ? 'light' : '';
-        },
-        scrollToSelected: function () {
-          var el = document.querySelector('.row.selected');
-          if (el) el.scrollIntoView({ block: 'center' });
-        }
+      window.renderTree = function (json) {
+        try { rows = JSON.parse(json || '[]'); } catch (e) { rows = []; }
+        render();
+        var selected = document.querySelector('.row.selected');
+        if (selected) selected.scrollIntoView({ block: 'center' });
       };
-      bridge('ready', 'ok');
+      window.setTheme = function (theme) {
+        document.body.className = theme === 'light' ? 'light' : '';
+      };
+      window.setActiveNote = function (noteId) {
+        active = noteId || '';
+        render();
+        var selected = document.querySelector('.row.selected');
+        if (selected) selected.scrollIntoView({ block: 'center' });
+      };
+      bridge('onReady', 'ok');
     })();
   </script>
 </body>

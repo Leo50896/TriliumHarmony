@@ -22,6 +22,7 @@ import { SessionStore } from '../services/SessionStore';
 import { SyncResult, SyncService } from '../services/SyncService';
 import { AppIcon } from './AppIcon';
 import { LogoMark } from './LogoMark';
+import { TreeWebView } from './TreeWebView';
 
 /**
  * Navigation drawer content. The host screen places it inside a
@@ -457,14 +458,15 @@ export struct SideDrawer {
         const note: TriliumNote = matches[index];
         rows.push(new DrawerTreeNode(note.noteId, note.title, 0, note.hasVisibleChildren(),
           this.isExpanded(note.noteId), this.selectedNoteId === note.noteId,
-          note.type, note.isProtected));
+          note.type, note.isProtected, this.noteAttribute(note.noteId, 'iconClass')));
       }
     } else {
       const rootNote: TriliumNote | undefined = this.noteCache.get('root');
       if (rootNote !== undefined) {
         rows.push(new DrawerTreeNode('root', rootNote.title.length > 0 ? rootNote.title : 'root',
           0, true, this.isExpanded('root'), this.selectedNoteId === 'root',
-          rootNote.type, rootNote.isProtected));
+          rootNote.type, rootNote.isProtected,
+          this.noteAttribute('root', 'iconClass')));
       }
       for (let index: number = 0; index < this.rootChildIds.length; index++) {
         this.appendVisible(this.rootChildIds[index], 1, rows);
@@ -484,7 +486,8 @@ export struct SideDrawer {
     }
     const expanded: boolean = this.isExpanded(note.noteId);
     rows.push(new DrawerTreeNode(note.noteId, note.title, level, note.hasVisibleChildren(),
-      expanded, this.selectedNoteId === note.noteId, note.type, note.isProtected));
+      expanded, this.selectedNoteId === note.noteId, note.type, note.isProtected,
+      this.noteAttribute(note.noteId, 'iconClass')));
 
     if (expanded) {
       for (let index: number = 0; index < note.childNoteIds.length; index++) {
@@ -998,13 +1001,21 @@ export struct SideDrawer {
               .height(180)
               .justifyContent(FlexAlign.Center)
             } else {
-              Column({ space: 0 }) {
-                ForEach(this.tree, (item: DrawerTreeNode) => {
-                  this.DrawerRow(item)
-                }, (item: DrawerTreeNode) => this.itemKey(item))
-              }
+              TreeWebView({
+                treeJson: JSON.stringify(this.tree),
+                activeNoteId: this.selectedNoteId,
+                onSelect: (noteId: string) => {
+                  for (let i = 0; i < this.tree.length; i++) {
+                    const item: DrawerTreeNode = this.tree[i];
+                    if (item.noteId === noteId) {
+                      this.handleNodeTap(item);
+                      return;
+                    }
+                  }
+                }
+              })
               .width('100%')
-              .padding({ left: 10, right: 10, top: 8, bottom: 14 })
+              .height(620)
             }
 
             if (this.hasSyncError && this.cachedNotes.length > 0) {
