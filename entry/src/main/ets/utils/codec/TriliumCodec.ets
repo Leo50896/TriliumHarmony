@@ -49,6 +49,9 @@ export class TriliumCodec {
   }
 
   static serializeBlock(block: ContentBlock, format: string): string {
+    if (block.serializeMode === 'raw' && block.raw.length > 0) {
+      return block.raw;
+    }
     if (!block.dirty && block.raw.length > 0) {
       return block.raw;
     }
@@ -113,9 +116,11 @@ export class TriliumCodec {
   }
 
   private static serializeHtmlBlock(block: ContentBlock): string {
-    if (block.raw.length > 0 &&
-      (block.kind === ContentBlockKind.TABLE || block.kind === ContentBlockKind.IMAGE ||
-        block.kind === ContentBlockKind.RAW)) {
+    if (block.raw.length > 0 && block.kind === ContentBlockKind.RAW) {
+      return block.raw;
+    }
+    if (block.raw.length > 0 && block.kind === ContentBlockKind.TABLE &&
+      block.serializeMode !== 'model') {
       return block.raw;
     }
     switch (block.kind) {
@@ -129,9 +134,40 @@ export class TriliumCodec {
         return `<p>${TriliumCodec.serializeInlineHtml(block.segments)}</p>`;
       case ContentBlockKind.LIST:
         return TriliumCodec.serializeHtmlList(block);
+      case ContentBlockKind.IMAGE:
+        return TriliumCodec.serializeHtmlImage(block);
       default:
         return block.raw.length > 0 ? block.raw : block.text;
     }
+  }
+
+  private static serializeHtmlImage(block: ContentBlock): string {
+    if (block.image === null) {
+      return block.raw;
+    }
+    const image = block.image;
+    let attrs: string = '';
+    if (image.width > 0) {
+      attrs += ` width="${image.width}"`;
+    }
+    if (image.height > 0) {
+      attrs += ` height="${image.height}"`;
+    }
+    if (image.widthPercent > 0) {
+      attrs += ` style="width:${image.widthPercent}%"`;
+    }
+    const title: string = image.title.length > 0 ?
+      ` title="${TriliumCodec.escapeHtml(image.title)}"` : '';
+    let html: string = `<img src="${TriliumCodec.escapeHtml(image.src)}" ` +
+      `alt="${TriliumCodec.escapeHtml(image.alt)}"${title}${attrs}>`;
+    if (image.href.length > 0) {
+      html = `<a href="${TriliumCodec.escapeHtml(image.href)}">${html}</a>`;
+    }
+    if (image.figureCaption.length > 0) {
+      html = `<figure>${html}<figcaption>` +
+        `${TriliumCodec.escapeHtml(image.figureCaption)}</figcaption></figure>`;
+    }
+    return html;
   }
 
   private static serializeHtmlList(block: ContentBlock): string {

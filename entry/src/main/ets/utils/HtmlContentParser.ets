@@ -224,6 +224,7 @@ export class ContentBlock {
   raw: string = '';
   source: SourceSpan | null = null;
   dirty: boolean = false;
+  serializeMode: string = 'model';
   attrs: Map<string, string> = new Map();
   children: ContentBlock[] = [];
 

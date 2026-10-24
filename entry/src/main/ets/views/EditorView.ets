@@ -21,6 +21,7 @@ import { TriliumCallout } from '../components/TriliumCallout';
 import { BlockRichEditor } from '../components/BlockRichEditor';
 import { BlockTarget } from '../components/BlockTarget';
 import { BlockEditMode, BlockRendererRegistry, BlockRendererSpec } from '../components/BlockRenderer';
+import { ComplexBlockEditorHost } from '../components/ComplexBlockEditorHost';
 import { AuthSession } from '../models/AuthModels';
 import { CachedNote } from '../models/CacheModels';
 import {
@@ -196,6 +197,7 @@ export struct EditorView {
   @State private codeEditTarget: BlockTarget | null = null;
   @State private codeEditText: string = '';
   @State private codeEditLanguage: string = '';
+  @State private complexEditBlock: ContentBlock | null = null;
   @State private readingProgress: number = 0;
   @State private readingContentHeight: number = 0;
   @State private readingViewportHeight: number = 0;
@@ -1051,6 +1053,32 @@ export struct EditorView {
     }
     return this.editingTarget.isSame(
       BlockTarget.forBlock(block.id, block.kind, [itemIndex]));
+  }
+
+  private requestComplexEdit(block: ContentBlock): void {
+    if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
+      this.isSaving || this.isEditing || this.isRichEditing) {
+      return;
+    }
+    if (block.kind !== ContentBlockKind.IMAGE && block.kind !== ContentBlockKind.TABLE &&
+      block.kind !== ContentBlockKind.CALLOUT) {
+      return;
+    }
+    this.complexEditBlock = block;
+  }
+
+  private closeComplexEdit(): void {
+    this.complexEditBlock = null;
+  }
+
+  private saveComplexEdit(next: ContentBlock): void {
+    const block: ContentBlock | null = this.complexEditBlock;
+    this.complexEditBlock = null;
+    if (block === null) {
+      return;
+    }
+    const target: BlockTarget = BlockTarget.forBlock(block.id, block.kind);
+    this.commitReplacement(target, next);
   }
 
   private requestCodeEdit(block: ContentBlock): void {
@@ -2207,28 +2235,46 @@ export struct EditorView {
       })
     } else if (block.kind === ContentBlockKind.TABLE) {
       if (block.table !== null) {
-        TriliumTable({
-          table: block.table,
-          onLink: (href: string) => {
-            this.openLink(href);
-          }
+        Column() {
+          TriliumTable({
+            table: block.table,
+            onLink: (href: string) => {
+              this.openLink(href);
+            }
+          })
+        }
+        .width('100%')
+        .onClick(() => {
+          this.requestComplexEdit(block);
         })
       }
     } else if (block.kind === ContentBlockKind.IMAGE) {
       if (block.image !== null) {
-        TriliumImage({
-          src: block.image.src,
-          alt: block.image.alt,
-          widthPercent: block.image.widthPercent
+        Column() {
+          TriliumImage({
+            src: block.image.src,
+            alt: block.image.alt,
+            widthPercent: block.image.widthPercent
+          })
+        }
+        .width('100%')
+        .onClick(() => {
+          this.requestComplexEdit(block);
         })
       }
     } else if (block.kind === ContentBlockKind.CALLOUT) {
       if (block.callout !== null) {
-        TriliumCallout({
-          callout: block.callout,
-          onLink: (href: string) => {
-            this.openLink(href);
-          }
+        Column() {
+          TriliumCallout({
+            callout: block.callout,
+            onLink: (href: string) => {
+              this.openLink(href);
+            }
+          })
+        }
+        .width('100%')
+        .onClick(() => {
+          this.requestComplexEdit(block);
         })
       }
     } else if (block.kind === ContentBlockKind.FOOTNOTES) {
@@ -3858,6 +3904,18 @@ export struct EditorView {
 
       if (this.codeEditTarget !== null) {
         this.CodeEditorOverlay()
+      }
+
+      if (this.complexEditBlock !== null) {
+        ComplexBlockEditorHost({
+          block: this.complexEditBlock as ContentBlock,
+          onSave: (nextBlock: ContentBlock) => {
+            this.saveComplexEdit(nextBlock);
+          },
+          onCancel: () => {
+            this.closeComplexEdit();
+          }
+        })
       }
     }
     .width('100%')
