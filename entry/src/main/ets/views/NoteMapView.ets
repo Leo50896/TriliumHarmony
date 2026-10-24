@@ -371,7 +371,7 @@ export struct NoteMapView {
     this.nodeCount = rich.nodes.length;
     const json: string = JSON.stringify(rich);
     const encoded: string = JSON.stringify(json);
-    this.controller.runJavaScript(`renderMapJson(${encoded}); focusMapRoot();`);
+    this.controller.runJavaScript(`renderMapJson(${encoded});`);
   }
 
   private setMode(mode: string): void {

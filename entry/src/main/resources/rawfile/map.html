@@ -62,6 +62,9 @@
   var simulation = null;
   var theme = { dark: true };
   var selected = "";
+  var neighborIds = {};
+  var userFocused = false;
+  var pinnedId = "";
   var openBtn = document.getElementById("openNoteBtn");
 
   function positionOpenButton() {
@@ -137,6 +140,7 @@
         event.stopPropagation();
         selected = d.id;
         updateSelection();
+        focusNode(d.id);
         if (window.arkBridge && window.arkBridge.onNoteTap) {
           window.arkBridge.onNoteTap(d.id);
         }
@@ -185,9 +189,9 @@
     });
 
     simulation.on("end", function () {
-      // The tree map starts from its root; the link map has no single centre
-      // and fits the whole relation graph so its clusters are visible.
-      if (current && current.mode === "link") {
+      if (selected) {
+        focusNode(selected);
+      } else if (current && current.mode === "link") {
         fitToScreen(false);
       } else {
         focusRoot();
@@ -201,6 +205,13 @@
     window.mapLinkSel = link;
 
     updateSelection();
+    if (selected && window.mapNodes.some(function (n) { return n.id === selected; })) {
+      focusNode(selected);
+    } else if (current && current.mode === "link") {
+      fitToScreen(false);
+    } else {
+      focusRoot();
+    }
   }
 
   function drawLabels(scale) {
@@ -210,7 +221,7 @@
     var lastY = -99999;
     var labels = labelLayer.selectAll("text").data(
       (window.mapNodes || []).filter(function (n) {
-        return n.depth <= maxDepth;
+        return n.depth <= maxDepth || n.id === selected || neighborIds[n.id];
       }),
       function (d) { return d.id; }
     );
@@ -253,22 +264,75 @@
   }
 
   function updateSelection() {
+    neighborIds = {};
+    if (selected) {
+      (window.mapLinks || []).forEach(function (l) {
+        var s = typeof l.source === "object" ? l.source.id : l.source;
+        var t = typeof l.target === "object" ? l.target.id : l.target;
+        if (s === selected) neighborIds[t] = true;
+        if (t === selected) neighborIds[s] = true;
+      });
+    }
+    if (window.mapNodeSel) {
+      window.mapNodeSel
+        .attr("opacity", function (d) {
+          if (!selected) return 1;
+          return d.id === selected || neighborIds[d.id] ? 1 : 0.2;
+        })
+        .select("circle")
+        .attr("stroke", function (d) {
+          if (d.id === selected) return "#4a90e2";
+          if (neighborIds[d.id]) return "#7fb3ed";
+          return theme.dark ? "#ffffff" : "#b0b0b0";
+        })
+        .attr("stroke-width", function (d) {
+          if (d.id === selected) return 3;
+          if (neighborIds[d.id]) return 1.5;
+          return d.folder ? 1.5 : 0;
+        });
+    }
     if (!window.mapLinkSel) return;
     window.mapLinkSel
       .attr("stroke", function (l) {
         var active = selected && (l.source.id === selected || l.target.id === selected);
         if (active) return "#4a90e2";
-        return theme.dark ? "#999999" : "#333333";
+        return theme.dark ? "#9aa3b2" : "#5f6368";
       })
       .attr("stroke-opacity", function (l) {
         var active = selected && (l.source.id === selected || l.target.id === selected);
-        if (active) return 0.9;
-        return selected ? 0.06 : 0.12;
+        if (active) return 0.95;
+        return selected ? 0.05 : 0.42;
       })
       .attr("stroke-width", function (l) {
         var active = selected && (l.source.id === selected || l.target.id === selected);
-        return active ? 2 : 1;
+        return active ? 2.4 : 1;
       });
+    drawLabels(d3.zoomTransform(svg.node()).k);
+  }
+
+  function focusNode(noteId) {
+    var note = (window.mapNodes || []).filter(function (n) { return n.id === noteId; })[0];
+    if (!note) return;
+    if (pinnedId && pinnedId !== noteId) {
+      var previous = (window.mapNodes || []).filter(function (n) { return n.id === pinnedId; })[0];
+      if (previous) {
+        previous.fx = null;
+        previous.fy = null;
+      }
+    }
+    // Pin the focused note while it is selected so the force simulation cannot
+    // drift it away from the centre of the screen.
+    note.fx = note.x;
+    note.fy = note.y;
+    pinnedId = noteId;
+    userFocused = true;
+    var w = svg.node().clientWidth, h = svg.node().clientHeight;
+    var currentK = d3.zoomTransform(svg.node()).k;
+    var k = Math.max(currentK, 0.9);
+    var tx = w / 2 - note.x * k;
+    var ty = h / 2 - note.y * k;
+    svg.transition().duration(320).call(zoom.transform,
+      d3.zoomIdentity.translate(tx, ty).scale(k));
   }
 
   function fitLinked() {
@@ -342,6 +406,14 @@
   svg.on("click", function (event) {
     // Any click that is not stopped by a node clears the selection.
     selected = "";
+    if (pinnedId) {
+      var pinned = (window.mapNodes || []).filter(function (n) { return n.id === pinnedId; })[0];
+      if (pinned) {
+        pinned.fx = null;
+        pinned.fy = null;
+      }
+      pinnedId = "";
+    }
     openBtn.style.display = "none";
     updateSelection();
     if (window.arkBridge && window.arkBridge.onBlankTap) {
@@ -352,6 +424,7 @@
 
   window.renderMapJson = renderMapJson;
   window.focusMapRoot = focusRoot;
+  window.focusMapNode = focusNode;
   window.fitMap = fitToScreen;
   window.setMapZoom = setMapZoom;
 
