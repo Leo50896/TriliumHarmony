@@ -7,7 +7,7 @@
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
   body { font-family: -apple-system, "HarmonyOS Sans", sans-serif; }
   #map { width: 100%; height: 100%; display: block; }
-  .node-label { font-size: 11px; pointer-events: none; }
+  .node-label { font-size: 11px; pointer-events: none; transition: opacity 180ms ease; }
   #openNoteBtn {
     display: none;
     position: fixed;
@@ -225,7 +225,7 @@
       }),
       function (d) { return d.id; }
     );
-    labels.exit().remove();
+    labels.exit().transition().duration(160).style("opacity", 0).remove();
     var entered = labels.enter().append("text")
       .attr("class", "node-label")
       .attr("fill", theme.dark ? "#cccccc" : "#333333")
@@ -273,13 +273,14 @@
         if (t === selected) neighborIds[s] = true;
       });
     }
+    var fade = 220;
     if (window.mapNodeSel) {
-      window.mapNodeSel
+      window.mapNodeSel.transition().duration(fade)
         .attr("opacity", function (d) {
           if (!selected) return 1;
           return d.id === selected || neighborIds[d.id] ? 1 : 0.2;
-        })
-        .select("circle")
+        });
+      window.mapNodeSel.select("circle").transition().duration(fade)
         .attr("stroke", function (d) {
           if (d.id === selected) return "#4a90e2";
           if (neighborIds[d.id]) return "#7fb3ed";
@@ -292,7 +293,7 @@
         });
     }
     if (!window.mapLinkSel) return;
-    window.mapLinkSel
+    window.mapLinkSel.transition().duration(fade)
       .attr("stroke", function (l) {
         var active = selected && (l.source.id === selected || l.target.id === selected);
         if (active) return "#4a90e2";
@@ -331,7 +332,7 @@
     var k = Math.max(currentK, 0.9);
     var tx = w / 2 - note.x * k;
     var ty = h / 2 - note.y * k;
-    svg.transition().duration(320).call(zoom.transform,
+    svg.transition().duration(320).ease(d3.easeCubicOut).call(zoom.transform,
       d3.zoomIdentity.translate(tx, ty).scale(k));
   }
 
@@ -419,7 +420,6 @@
     if (window.arkBridge && window.arkBridge.onBlankTap) {
       window.arkBridge.onBlankTap();
     }
-    drawLabels(1);
   });
 
   window.renderMapJson = renderMapJson;
