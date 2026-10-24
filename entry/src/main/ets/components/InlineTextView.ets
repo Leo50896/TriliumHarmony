@@ -36,7 +36,8 @@ export struct InlineTextView {
   }
 
   private keyFor(segment: InlineSegment, index: number): string {
-    return `${index}-${segment.href}-${segment.color}-${segment.backgroundColor}`;
+    return `${index}-${segment.text}-${segment.bold ? 1 : 0}${segment.italic ? 1 : 0}` +
+      `${segment.code ? 1 : 0}-${segment.href}-${segment.color}-${segment.backgroundColor}`;
   }
 
   private pressLink(segment: InlineSegment, index: number): void {
