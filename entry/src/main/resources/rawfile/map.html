@@ -80,6 +80,9 @@
     }
   });
   svg.call(zoom);
+  zoom.on("end", function () {
+    sendMapState();
+  });
   var current = null;
   var simulation = null;
   var theme = { dark: true };
@@ -92,8 +95,14 @@
   var savedTransform = null;
   var openBtn = document.getElementById("openNoteBtn");
 
-  function positionOpenButton() {
-    if (!selected || !window.mapNodes) { openBtn.style.display = "none"; return; }
+  function sendMapState() {
+    if (!window.arkBridge || !window.arkBridge.onMapState) return;
+    var t = d3.zoomTransform(svg.node());
+    window.arkBridge.onMapState(current ? current.mode : "tree", selected || "",
+      t.k, t.x, t.y);
+  }
+
+  function positionOpenButton() {    if (!selected || !window.mapNodes) { openBtn.style.display = "none"; return; }
     var n = window.mapNodes.filter(function (x) { return x.id === selected; })[0];
     if (!n) { openBtn.style.display = "none"; return; }
     var t = d3.zoomTransform(svg.node());
@@ -173,6 +182,7 @@
           window.arkBridge.onNoteTap(d.id);
         }
         positionOpenButton();
+        setTimeout(sendMapState, 380);
       });
 
     node.call(d3.drag()
@@ -216,15 +226,20 @@
       positionOpenButton();
     });
 
+    var restoredView = !!(current && current.cameraK > 0);
+
     simulation.on("end", function () {
-      if (selected) {
+      if (restoredView) {
+        drawLabels(d3.zoomTransform(svg.node()).k);
+      } else if (selected) {
         focusNode(selected);
       } else if (current && current.mode === "link") {
         fitToScreen(false);
       } else {
         focusRoot();
       }
-      drawLabels(0.9);
+      drawLabels(d3.zoomTransform(svg.node()).k);
+      sendMapState();
     });
 
     window.mapNodes = nodes;
@@ -232,13 +247,30 @@
     window.mapNodeSel = node;
     window.mapLinkSel = link;
 
-    updateSelection();
-    if (selected && window.mapNodes.some(function (n) { return n.id === selected; })) {
-      focusNode(selected);
-    } else if (current && current.mode === "link") {
-      fitToScreen(false);
+    if (restoredView) {
+      selected = current.focusId || "";
+      if (selected) {
+        var focused = nodes.filter(function (n) { return n.id === selected; })[0];
+        if (focused) {
+          focused.fx = focused.x;
+          focused.fy = focused.y;
+          pinnedId = selected;
+        }
+      }
+      updateSelection();
+      svg.call(zoom.transform,
+        d3.zoomIdentity.translate(current.cameraX, current.cameraY).scale(current.cameraK));
+      drawLabels(current.cameraK);
+      sendMapState();
     } else {
-      focusRoot();
+      updateSelection();
+      if (selected && window.mapNodes.some(function (n) { return n.id === selected; })) {
+        focusNode(selected);
+      } else if (current && current.mode === "link") {
+        fitToScreen(false);
+      } else {
+        focusRoot();
+      }
     }
   }
 
@@ -457,6 +489,7 @@
     if (window.arkBridge && window.arkBridge.onBlankTap) {
       window.arkBridge.onBlankTap();
     }
+    setTimeout(sendMapState, 380);
   });
 
   window.renderMapJson = renderMapJson;

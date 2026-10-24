@@ -46,6 +46,10 @@ class WebMapPayload {
   links: WebMapLink[] = [];
   dark: boolean = true;
   mode: string = 'tree';
+  focusId: string = '';
+  cameraK: number = 0;
+  cameraX: number = 0;
+  cameraY: number = 0;
 }
 
 class WebNoteInfo {
@@ -70,14 +74,17 @@ class MapBridge {
   private blank: () => void;
   private open: (noteId: string) => void;
   private zoom: (value: number) => void;
+  private state: (mode: string, focusId: string, k: number, x: number, y: number) => void;
 
   constructor(tap: (noteId: string) => void, ready: () => void, blank: () => void,
-    open: (noteId: string) => void, zoom: (value: number) => void) {
+    open: (noteId: string) => void, zoom: (value: number) => void,
+    state: (mode: string, focusId: string, k: number, x: number, y: number) => void) {
     this.tap = tap;
     this.ready = ready;
     this.blank = blank;
     this.open = open;
     this.zoom = zoom;
+    this.state = state;
   }
 
   onNoteTap(noteId: string): void {
@@ -98,6 +105,10 @@ class MapBridge {
 
   onZoomChanged(value: number): void {
     this.zoom(value);
+  }
+
+  onMapState(mode: string, focusId: string, k: number, x: number, y: number): void {
+    this.state(mode, focusId, k, x, y);
   }
 }
 
@@ -123,6 +134,8 @@ export struct NoteMapView {
   private dataReady: boolean = false;
   private payload: WebMapPayload = new WebMapPayload();
   private notesById: Map<string, TriliumNote> = new Map();
+  private hasSavedView: boolean = false;
+  private restoreCamera: boolean = false;
   private bridge: MapBridge = new MapBridge((noteId: string) => {
     this.selectNote(noteId);
   }, () => {
@@ -137,9 +150,26 @@ export struct NoteMapView {
     if (Math.abs(percent - this.zoomLevel) > 1) {
       this.zoomLevel = percent;
     }
+  }, (mode: string, focusId: string, k: number, x: number, y: number) => {
+    AppStorage.setOrCreate('MAP_VIEW_MODE', mode);
+    AppStorage.setOrCreate('MAP_VIEW_FOCUS', focusId);
+    AppStorage.setOrCreate('MAP_VIEW_K', k);
+    AppStorage.setOrCreate('MAP_VIEW_X', x);
+    AppStorage.setOrCreate('MAP_VIEW_Y', y);
+    this.hasSavedView = true;
+    this.restoreCamera = true;
   });
 
   aboutToAppear(): void {
+    const savedMode: string | undefined = AppStorage.get<string>('MAP_VIEW_MODE');
+    if (savedMode === 'link' || savedMode === 'tree') {
+      this.layoutMode = savedMode;
+    }
+    const savedK: number | undefined = AppStorage.get<number>('MAP_VIEW_K');
+    if (savedK !== undefined && savedK > 0) {
+      this.hasSavedView = true;
+      this.restoreCamera = true;
+    }
     this.loadNotes();
   }
 
@@ -327,7 +357,9 @@ export struct NoteMapView {
     const rootNote: TriliumNote | undefined = byId.get('root');
     const source: TriliumNote | undefined = selectedNote ?? rootNote;
     const mapType: string = source !== undefined ? this.attributeValue(source, 'mapType') : '';
-    this.layoutMode = mapType === 'link' ? 'link' : 'tree';
+    if (!this.hasSavedView) {
+      this.layoutMode = mapType === 'link' ? 'link' : 'tree';
+    }
 
     this.payload = new WebMapPayload();
     this.payload.nodes = nodes;
@@ -368,6 +400,15 @@ export struct NoteMapView {
     }
     rich.dark = AppStorage.get<number>('colorMode') === 0;
     rich.mode = this.layoutMode;
+    if (this.restoreCamera) {
+      const savedK: number | undefined = AppStorage.get<number>('MAP_VIEW_K');
+      if (savedK !== undefined && savedK > 0) {
+        rich.cameraK = savedK;
+        rich.cameraX = AppStorage.get<number>('MAP_VIEW_X') ?? 0;
+        rich.cameraY = AppStorage.get<number>('MAP_VIEW_Y') ?? 0;
+        rich.focusId = AppStorage.get<string>('MAP_VIEW_FOCUS') ?? '';
+      }
+    }
     this.nodeCount = rich.nodes.length;
     const json: string = JSON.stringify(rich);
     const encoded: string = JSON.stringify(json);
@@ -377,6 +418,8 @@ export struct NoteMapView {
   private setMode(mode: string): void {
     if (this.layoutMode === mode) return;
     this.layoutMode = mode;
+    this.restoreCamera = false;
+    AppStorage.setOrCreate('MAP_VIEW_MODE', mode);
     this.pushData();
   }
 
@@ -500,7 +543,7 @@ export struct NoteMapView {
           .javaScriptProxy({
             object: this.bridge,
             name: 'arkBridge',
-            methodList: ['onNoteTap', 'onReady', 'onBlankTap', 'onOpenTap', 'onZoomChanged'],
+            methodList: ['onNoteTap', 'onReady', 'onBlankTap', 'onOpenTap', 'onZoomChanged', 'onMapState'],
             controller: this.controller
           })
           .onPageEnd(() => {
