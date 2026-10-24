@@ -37,6 +37,7 @@ import { TriliumNote, EtapiAttributePayload } from '../models/TriliumModels';
 import { StateKeys } from '../constants/StateKeys';
 import { EtapiService } from '../services/EtapiService';
 import { ExternalLinkLauncher } from '../services/ExternalLinkLauncher';
+import { ImageDiskCache } from '../services/ImageDiskCache';
 import { LocalNote, LocalStore } from '../services/LocalStore';
 import { PdfDiskCache } from '../services/PdfDiskCache';
 import { ReadingPositionStore } from '../services/ReadingPositionStore';
@@ -1484,10 +1485,22 @@ export struct EditorView {
     for (let i = 0; i < sources.length; i++) {
       const src: string = sources[i];
       try {
-        const binary = await EtapiService.fetchUrlBinary(active, src);
+        const context: common.UIAbilityContext | null = this.hostContext();
+        if (context === null) {
+          continue;
+        }
+        const key: string = await ImageDiskCache.keyFor(active.serverUrl, src);
+        let data: ArrayBuffer | null = await ImageDiskCache.readBuffer(context, key);
+        let mime: string = 'image/jpeg';
+        if (data === null) {
+          const binary = await EtapiService.fetchUrlBinary(active, src);
+          data = binary.data;
+          mime = binary.mime;
+          await ImageDiskCache.write(context, key, data);
+        }
         const base64: string = new util.Base64Helper().encodeToStringSync(
-          new Uint8Array(binary.data));
-        html = html.split(src).join(`data:${binary.mime};base64,${base64}`);
+          new Uint8Array(data));
+        html = html.split(src).join(`data:${mime};base64,${base64}`);
       } catch (error) {
         console.error(`WEB_IMAGE_FAILED ${src}`);
       }

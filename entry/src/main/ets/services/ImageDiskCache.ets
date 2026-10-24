@@ -126,6 +126,31 @@ export class ImageDiskCache {
     ImageDiskCache.evict(context);
   }
 
+  static async readBuffer(context: common.UIAbilityContext,
+    key: string): Promise<ArrayBuffer | null> {
+    const dir: string = ImageDiskCache.ensureDirectory(context);
+    const path: string = `${dir}/${key}.img`;
+    try {
+      if (!fs.accessSync(path)) {
+        return null;
+      }
+      const stat: fs.Stat = fs.statSync(path);
+      if (stat.size <= 0) {
+        return null;
+      }
+      const buffer: ArrayBuffer = new ArrayBuffer(stat.size);
+      const file: fs.File = fs.openSync(path, fs.OpenMode.READ_ONLY);
+      try {
+        fs.readSync(file.fd, buffer);
+      } finally {
+        fs.closeSync(file);
+      }
+      return buffer;
+    } catch (error) {
+      return null;
+    }
+  }
+
   private static evict(context: common.UIAbilityContext): void {
     const dir: string = ImageDiskCache.directory(context);
     try {
