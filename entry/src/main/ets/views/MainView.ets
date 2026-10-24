@@ -19,11 +19,90 @@ export struct MainView {
   // for the first post-login screen.
   @State @Watch('onDrawerVisibilityChanged') private showDrawer: boolean = true;
   @State private currentView: string = 'editor';
-  @StorageProp(StateKeys.SELECTED_NOTE_ID) private selectedNoteId: string = '';
+  @StorageProp(StateKeys.SELECTED_NOTE_ID) @Watch('onSelectedNoteChanged')
+  private selectedNoteId: string = '';
+  @StorageLink(StateKeys.BACK_REQUEST) @Watch('onSystemBackRequest')
+  private backRequest: number = 0;
+  private viewHistory: string[] = [];
+  private noteHistory: string[] = [];
+  private lastNoteId: string = '';
+  private suppressNoteHistory: boolean = false;
+
+  aboutToAppear(): void {
+    this.lastNoteId = this.selectedNoteId;
+    this.updateBackAvailable();
+  }
+
+  private updateBackAvailable(): void {
+    const canHandle: boolean = this.showDrawer || this.viewHistory.length > 0 || this.noteHistory.length > 0;
+    AppStorage.setOrCreate(StateKeys.BACK_AVAILABLE, canHandle);
+  }
+
+  private onSelectedNoteChanged(): void {
+    if (this.suppressNoteHistory) {
+      this.lastNoteId = this.selectedNoteId;
+      return;
+    }
+    if (this.currentView !== 'editor') {
+      this.viewHistory = [];
+      this.currentView = 'editor';
+    }
+    if (this.lastNoteId.length > 0 && this.lastNoteId !== this.selectedNoteId) {
+      this.noteHistory.push(this.lastNoteId);
+    }
+    this.lastNoteId = this.selectedNoteId;
+    this.updateBackAvailable();
+  }
+
+  private openView(view: string): void {
+    if (view === this.currentView) {
+      this.updateBackAvailable();
+      return;
+    }
+    this.viewHistory.push(this.currentView);
+    this.currentView = view;
+    this.updateBackAvailable();
+  }
+
+  private openEditorRoot(): void {
+    this.viewHistory = [];
+    this.currentView = 'editor';
+    this.updateBackAvailable();
+  }
+
+  private goBack(): boolean {
+    if (this.showDrawer) {
+      this.closeDrawer();
+      return true;
+    }
+    if (this.viewHistory.length > 0) {
+      const previous: string = this.viewHistory.pop() as string;
+      this.currentView = previous;
+      this.updateBackAvailable();
+      return true;
+    }
+    if (this.noteHistory.length > 0) {
+      const previousNote: string = this.noteHistory.pop() as string;
+      this.suppressNoteHistory = true;
+      AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, previousNote);
+      AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_TITLE, '');
+      this.lastNoteId = previousNote;
+      this.suppressNoteHistory = false;
+      this.currentView = 'editor';
+      this.updateBackAvailable();
+      return true;
+    }
+    return false;
+  }
+
+  private onSystemBackRequest(): void {
+    this.goBack();
+  }
 
   private onDrawerVisibilityChanged(): void {
     const tick: number = AppStorage.get<number>('TEXT_SELECTION_DISMISS') ?? 0;
     AppStorage.setOrCreate('TEXT_SELECTION_DISMISS', tick + 1);
+    this.updateBackAvailable();
     try {
       this.getUIContext().getFocusController().clearFocus();
     } catch (error) {
@@ -43,6 +122,7 @@ export struct MainView {
     this.showDrawer = false;
     const tick: number = AppStorage.get<number>('TEXT_SELECTION_DISMISS') ?? 0;
     AppStorage.setOrCreate('TEXT_SELECTION_DISMISS', tick + 1);
+    this.updateBackAvailable();
     try {
       this.getUIContext().getFocusController().clearFocus();
     } catch (error) {
@@ -59,25 +139,25 @@ export struct MainView {
           this.closeDrawer();
         },
         onOpenGlobalSearch: () => {
-          this.currentView = 'editor';
+          this.openEditorRoot();
           this.closeDrawer();
           AppStorage.setOrCreate(StateKeys.OPEN_GLOBAL_SEARCH, true);
         },
         onOpenNote: (noteId: string, title: string) => {
-          this.currentView = 'editor';
+          this.openEditorRoot();
           this.closeDrawer();
         },
         onOpenSettings: () => {
-          this.currentView = 'settings';
           this.closeDrawer();
+          this.openView('settings');
         },
         onOpenNoteMap: () => {
-          this.currentView = 'notemap';
           this.closeDrawer();
+          this.openView('notemap');
         },
         onNewNote: () => {
           this.closeDrawer();
-          this.currentView = 'editor';
+          this.openEditorRoot();
           this.toast('已新建笔记（界面演示）');
         },
         onSessionExpired: () => {
@@ -89,28 +169,33 @@ export struct MainView {
         if (this.currentView === 'settings') {
           SettingsView({
             onBack: () => {
-              this.currentView = 'editor';
+              this.goBack();
             },
             onLogout: this.onLogout,
             onOpenLicense: () => {
-              this.currentView = 'license';
+              this.openView('license');
             }
           })
         } else if (this.currentView === 'license') {
           LicenseView({
             onBack: () => {
-              this.currentView = 'settings';
+              this.goBack();
             }
           })
         } else if (this.currentView === 'notemap') {
           NoteMapView({
             onBack: () => {
-              this.currentView = 'editor';
+              this.goBack();
             },
             onOpenNote: (noteId: string) => {
+              this.viewHistory = [];
+              this.suppressNoteHistory = true;
               AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, noteId);
               AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_TITLE, '');
+              this.lastNoteId = noteId;
+              this.suppressNoteHistory = false;
               this.currentView = 'editor';
+              this.updateBackAvailable();
             }
           })
         } else {
@@ -126,8 +211,12 @@ export struct MainView {
               },
               onSessionExpired: this.onLogout,
               onDeleted: (parentNoteId: string) => {
+                this.suppressNoteHistory = true;
                 AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, parentNoteId);
+                this.lastNoteId = parentNoteId;
+                this.suppressNoteHistory = false;
                 this.currentView = 'editor';
+                this.updateBackAvailable();
               }
             })
           }, (noteId: string) => noteId)

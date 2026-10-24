@@ -58,7 +58,20 @@ struct Index {
       console.error(`BOXICONS_REGISTER_FAILED ${JSON.stringify(error)}`);
     }
     SessionStore.installDefaults();
+    AppStorage.setOrCreate(StateKeys.BACK_AVAILABLE, false);
     this.initializeApp();
+  }
+
+  onBackPress(): boolean {
+    if (this.phase !== 2 || this.locked) {
+      return false;
+    }
+    if (AppStorage.get<boolean>(StateKeys.BACK_AVAILABLE) !== true) {
+      return false;
+    }
+    const request: number = AppStorage.get<number>(StateKeys.BACK_REQUEST) ?? 0;
+    AppStorage.setOrCreate(StateKeys.BACK_REQUEST, request + 1);
+    return true;
   }
 
   private async initializeApp(): Promise<void> {
