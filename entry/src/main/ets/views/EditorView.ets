@@ -117,6 +117,10 @@ export struct EditorView {
   onMore: () => void = () => {};
   onDeleted: (parentNoteId: string) => void = () => {};
   onSessionExpired: () => void = () => {};
+  onSwipeRight: () => void = () => {};
+  private swipeStartX: number = 0;
+  private swipeStartY: number = 0;
+  private swipeTracking: boolean = false;
 
   @State private note: TriliumNote | null = null;
   @State private blocks: ContentBlock[] = [];
@@ -3356,6 +3360,26 @@ export struct EditorView {
             this.updateReadingProgress(offset.yOffset);
           } catch (error) {
             // The Scroll component may be transitioning between notes.
+          }
+        })
+        .onTouch((event: TouchEvent) => {
+          const touch: TouchObject | undefined = event.touches[0];
+          if (touch === undefined) {
+            return;
+          }
+          if (event.type === TouchType.Down) {
+            this.swipeStartX = touch.x;
+            this.swipeStartY = touch.y;
+            this.swipeTracking = true;
+          } else if (event.type === TouchType.Up && this.swipeTracking) {
+            const dx: number = touch.x - this.swipeStartX;
+            const dy: number = touch.y - this.swipeStartY;
+            this.swipeTracking = false;
+            if (dx > 90 && Math.abs(dy) < 70) {
+              this.onSwipeRight();
+            }
+          } else if (event.type === TouchType.Cancel) {
+            this.swipeTracking = false;
           }
         })
         }

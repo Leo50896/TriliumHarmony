@@ -206,6 +206,9 @@ export struct MainView {
                 this.toast('更多操作：导出、历史与笔记信息');
               },
               onSessionExpired: this.onLogout,
+              onSwipeRight: () => {
+                this.showDrawer = true;
+              },
               onDeleted: (parentNoteId: string) => {
                 this.suppressNoteHistory = true;
                 AppStorage.setOrCreate(StateKeys.SELECTED_NOTE_ID, parentNoteId);
@@ -238,7 +241,7 @@ export struct MainView {
     .maxSideBarWidth(340)
     .showControlButton(false)
     .showSideBar(this.showDrawer)
-    .showSideBarWithGesture(this.sidebarGestureEnabled)
+    .showSideBarWithGesture(false)
     .autoHide(false)
     .divider({ strokeWidth: 0 })
     .onChange((isShown: boolean) => {
