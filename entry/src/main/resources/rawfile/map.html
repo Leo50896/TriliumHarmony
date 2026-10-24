@@ -56,6 +56,25 @@
     if (window.arkBridge && window.arkBridge.onZoomChanged) {
       window.arkBridge.onZoomChanged(event.transform.k);
     }
+    // While a note is focused, pin it to the screen centre during zooming.
+    // Panning (same scale) is still free.
+    if (selected && !adjustingZoom) {
+      var k = event.transform.k;
+      if (Math.abs(k - lastZoomK) > 0.0005) {
+        lastZoomK = k;
+        var focusNodeObj = (window.mapNodes || []).filter(function (n) { return n.id === selected; })[0];
+        if (focusNodeObj) {
+          var w = svg.node().clientWidth, h = svg.node().clientHeight;
+          var tx = w / 2 - focusNodeObj.x * k;
+          var ty = h / 2 - focusNodeObj.y * k;
+          if (Math.abs(tx - event.transform.x) > 1 || Math.abs(ty - event.transform.y) > 1) {
+            adjustingZoom = true;
+            svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+            adjustingZoom = false;
+          }
+        }
+      }
+    }
   });
   svg.call(zoom);
   var current = null;
@@ -65,6 +84,9 @@
   var neighborIds = {};
   var userFocused = false;
   var pinnedId = "";
+  var adjustingZoom = false;
+  var lastZoomK = 1;
+  var savedTransform = null;
   var openBtn = document.getElementById("openNoteBtn");
 
   function positionOpenButton() {
@@ -314,6 +336,9 @@
   function focusNode(noteId) {
     var note = (window.mapNodes || []).filter(function (n) { return n.id === noteId; })[0];
     if (!note) return;
+    if (!savedTransform) {
+      savedTransform = d3.zoomTransform(svg.node());
+    }
     if (pinnedId && pinnedId !== noteId) {
       var previous = (window.mapNodes || []).filter(function (n) { return n.id === pinnedId; })[0];
       if (previous) {
@@ -417,6 +442,12 @@
     }
     openBtn.style.display = "none";
     updateSelection();
+    if (savedTransform) {
+      var restore = savedTransform;
+      savedTransform = null;
+      svg.transition().duration(320).ease(d3.easeCubicOut)
+        .call(zoom.transform, restore);
+    }
     if (window.arkBridge && window.arkBridge.onBlankTap) {
       window.arkBridge.onBlankTap();
     }
