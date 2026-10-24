@@ -1252,7 +1252,8 @@ export struct EditorView {
     }
   }
 
-  private commitBlockEdit(target: BlockTarget, segments: InlineSegment[], text: string): void {
+  private commitBlockEdit(target: BlockTarget, segments: InlineSegment[], text: string,
+    headingLevel: number = 0): void {
     if (this.editingTarget === null || !this.editingTarget.isSame(target)) {
       return;
     }
@@ -1285,18 +1286,22 @@ export struct EditorView {
       return;
     }
 
+    const nextKind: ContentBlockKind = headingLevel > 0 ? ContentBlockKind.HEADING : block.kind;
+    const nextLevel: number = headingLevel > 0 ? headingLevel : block.level;
     if (text === this.blockText(block) &&
-      this.segmentSignature(segments) === this.segmentSignature(block.segments)) {
+      this.segmentSignature(segments) === this.segmentSignature(block.segments) &&
+      nextKind === block.kind && nextLevel === block.level) {
       return;
     }
 
-    const replacement: ContentBlock = new ContentBlock(block.kind, text, block.level,
+    const replacement: ContentBlock = new ContentBlock(nextKind, text, nextLevel,
       block.codeLines, block.language, segments, block.listItems, block.table, block.image,
       block.listMarkers, block.callout, block.include, block.listLevels, block.indent,
       block.quoteBlocks, block.id, block.raw, block.source);
     replacement.attrs = block.attrs;
     replacement.children = block.children;
     replacement.dirty = true;
+    replacement.serializeMode = 'model';
     this.commitReplacement(target, replacement);
   }
 
@@ -2159,8 +2164,9 @@ export struct EditorView {
             lineHeight: this.readerSize(block.level === 1 ? 36 : 31),
             heading: true,
             commitTick: this.blockCommitTick,
-            onCommit: (segments: InlineSegment[], text: string) => {
-              this.commitBlockEdit(BlockTarget.forBlock(block.id, block.kind), segments, text);
+            onCommit: (segments: InlineSegment[], text: string, headingLevel?: number) => {
+              this.commitBlockEdit(BlockTarget.forBlock(block.id, block.kind), segments, text,
+                headingLevel);
             }
           })
         } else {
@@ -2237,7 +2243,7 @@ export struct EditorView {
                   lineHeight: this.readerSize(27),
                   heading: false,
                   commitTick: this.blockCommitTick,
-                  onCommit: (segments: InlineSegment[], text: string) => {
+                  onCommit: (segments: InlineSegment[], text: string, headingLevel?: number) => {
                     this.commitBlockEdit(
                       BlockTarget.forBlock(block.id, block.kind, [index]), segments, text);
                   }
@@ -2496,8 +2502,9 @@ export struct EditorView {
             lineHeight: this.readerSize(28),
             heading: false,
             commitTick: this.blockCommitTick,
-            onCommit: (segments: InlineSegment[], text: string) => {
-              this.commitBlockEdit(BlockTarget.forBlock(block.id, block.kind), segments, text);
+            onCommit: (segments: InlineSegment[], text: string, headingLevel?: number) => {
+              this.commitBlockEdit(BlockTarget.forBlock(block.id, block.kind), segments, text,
+                headingLevel);
             }
           })
         } else {

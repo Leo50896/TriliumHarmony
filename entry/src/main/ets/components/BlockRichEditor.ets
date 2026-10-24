@@ -14,7 +14,7 @@ export struct BlockRichEditor {
   @Prop lineHeight: number = 28;
   @Prop heading: boolean = false;
   @Prop @Watch('onCommitTick') commitTick: number = 0;
-  onCommit: (segments: InlineSegment[], text: string) => void = () => {};
+  onCommit: (segments: InlineSegment[], text: string, headingLevel?: number) => void = () => {};
   onEditorFocus: () => void = () => {};
 
   private controller: RichEditorController = new RichEditorController();
@@ -28,6 +28,8 @@ export struct BlockRichEditor {
   @State private h2Active: boolean = false;
   private collapsedStyleUpdate: boolean = false;
   private lastStyleOffset: number = -1;
+  private boldOverride: boolean | null = null;
+  private italicOverride: boolean | null = null;
 
   aboutToAppear(): void {
     this.originalText = this.textOf(this.segments);
@@ -182,11 +184,13 @@ export struct BlockRichEditor {
 
   private toggleBold(): void {
     this.boldActive = !this.boldActive;
+    this.boldOverride = this.boldActive;
     this.applyTextStyle({ fontWeight: this.boldActive ? 700 : 400 });
   }
 
   private toggleItalic(): void {
     this.italicActive = !this.italicActive;
+    this.italicOverride = this.italicActive;
     this.applyTextStyle({
       fontStyle: this.italicActive ? FontStyle.Italic : FontStyle.Normal
     });
@@ -388,8 +392,10 @@ export struct BlockRichEditor {
         continue;
       }
       const style: RichEditorTextStyleResult = span.textStyle;
-      segments.push(new InlineSegment(value, this.isBold(style), style.fontStyle === FontStyle.Italic,
-        this.isCode(style)));
+      const bold: boolean = this.boldOverride !== null ? this.boldOverride : this.isBold(style);
+      const italic: boolean = this.italicOverride !== null ? this.italicOverride :
+        style.fontStyle === FontStyle.Italic;
+      segments.push(new InlineSegment(value, bold, italic, this.isCode(style)));
     }
     return this.restoreLinks(segments);
   }
@@ -453,7 +459,8 @@ export struct BlockRichEditor {
     }
     this.committed = true;
     const segments: InlineSegment[] = this.buildSegments();
-    this.onCommit(segments, this.textOf(segments));
+    const headingLevel: number = this.h1Active ? 1 : (this.h2Active ? 2 : 0);
+    this.onCommit(segments, this.textOf(segments), headingLevel);
   }
 
   build() {
