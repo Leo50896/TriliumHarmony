@@ -22,7 +22,6 @@ import { SessionStore } from '../services/SessionStore';
 import { SyncResult, SyncService } from '../services/SyncService';
 import { AppIcon } from './AppIcon';
 import { LogoMark } from './LogoMark';
-import { TreeWebView } from './TreeWebView';
 
 /**
  * Navigation drawer content. The host screen places it inside a
@@ -461,8 +460,14 @@ export struct SideDrawer {
           note.type, note.isProtected));
       }
     } else {
+      const rootNote: TriliumNote | undefined = this.noteCache.get('root');
+      if (rootNote !== undefined) {
+        rows.push(new DrawerTreeNode('root', rootNote.title.length > 0 ? rootNote.title : 'root',
+          0, true, this.isExpanded('root'), this.selectedNoteId === 'root',
+          rootNote.type, rootNote.isProtected));
+      }
       for (let index: number = 0; index < this.rootChildIds.length; index++) {
-        this.appendVisible(this.rootChildIds[index], 0, rows);
+        this.appendVisible(this.rootChildIds[index], 1, rows);
       }
     }
     this.tree = rows;
@@ -765,28 +770,31 @@ export struct SideDrawer {
     if (iconClass.length > 0) {
       return AttributeVisuals.glyph(iconClass);
     }
-    return AttributeVisuals.glyph(this.officialIconClass(item.noteId));
+    if (item.noteId === 'root') {
+      return AttributeVisuals.glyph('bx bx-home');
+    }
+    return '';
   }
 
   @Builder
   private DrawerRow(item: DrawerTreeNode) {
-    Row({ space: 7 }) {
+    Row({ space: 6 }) {
       Stack({ alignContent: Alignment.Center }) {
         if (this.loadingNodeId === item.noteId) {
           LoadingProgress()
-            .width(13)
-            .height(13)
+            .width(14)
+            .height(14)
             .color($r('app.color.primary_text'))
         } else if (item.hasChildren) {
           AppIcon({
             icon: item.expanded ? $r('app.media.ic_chevron_down') : $r('app.media.ic_chevron_right'),
-            iconSize: 12,
+            iconSize: 14,
             tint: item.selected ? $r('app.color.text_on_primary') : $r('app.color.text_tertiary')
           })
         }
       }
-      .width(14)
-      .height(24)
+      .width(20)
+      .height(20)
       .onClick(() => {
         this.toggleNode(item);
       })
@@ -794,16 +802,21 @@ export struct SideDrawer {
       if (this.rowGlyph(item).length > 0) {
         Text(this.rowGlyph(item))
           .fontFamily(AttributeVisuals.FONT_FAMILY)
-          .fontSize(18)
+          .fontSize(20)
+          .width(20)
+          .height(20)
+          .textAlign(TextAlign.Center)
           .fontColor(item.selected ? $r('app.color.text_on_primary') :
             (this.noteAttribute(item.noteId, 'color').length > 0
               ? this.rowColor(item) : $r('app.color.text_secondary')))
       } else {
         AppIcon({
           icon: this.rowIcon(item),
-          iconSize: 15,
+          iconSize: 20,
           tint: item.selected ? $r('app.color.text_on_primary') : $r('app.color.text_secondary')
         })
+        .width(20)
+        .height(20)
       }
 
       Text(item.title)
@@ -819,14 +832,15 @@ export struct SideDrawer {
       if (item.isProtected) {
         AppIcon({
           icon: $r('app.media.ic_lock'),
-          iconSize: 12,
+          iconSize: 14,
           tint: item.selected ? $r('app.color.text_on_primary') : $r('app.color.text_tertiary')
         })
       }
     }
     .width('100%')
-    .height(35)
-    .padding({ left: 7 + item.level * 15, right: 11 })
+    .height(36)
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 8 + item.level * 16, right: 11 })
     .backgroundColor(item.selected ? $r('app.color.primary') : Color.Transparent)
     .borderRadius(8)
     .margin({ bottom: 2 })
@@ -984,23 +998,13 @@ export struct SideDrawer {
               .height(180)
               .justifyContent(FlexAlign.Center)
             } else {
-              TreeWebView({
-                treeJson: JSON.stringify(this.tree),
-                onSelect: (noteId: string, title: string) => {
-                  this.onOpenNote(noteId, title);
-                  this.onCloseDrawer();
-                },
-                onToggle: (noteId: string) => {
-                  for (let i = 0; i < this.tree.length; i++) {
-                    if (this.tree[i].noteId === noteId) {
-                      this.toggleNode(this.tree[i]);
-                      return;
-                    }
-                  }
-                }
-              })
+              Column({ space: 0 }) {
+                ForEach(this.tree, (item: DrawerTreeNode) => {
+                  this.DrawerRow(item)
+                }, (item: DrawerTreeNode) => this.itemKey(item))
+              }
               .width('100%')
-              .height(620)
+              .padding({ left: 10, right: 10, top: 8, bottom: 14 })
             }
 
             if (this.hasSyncError && this.cachedNotes.length > 0) {
