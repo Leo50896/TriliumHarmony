@@ -22,6 +22,7 @@ import { SessionStore } from '../services/SessionStore';
 import { SyncResult, SyncService } from '../services/SyncService';
 import { AppIcon } from './AppIcon';
 import { LogoMark } from './LogoMark';
+import { TreeWebView } from './TreeWebView';
 
 /**
  * Navigation drawer content. The host screen places it inside a
@@ -983,13 +984,23 @@ export struct SideDrawer {
               .height(180)
               .justifyContent(FlexAlign.Center)
             } else {
-              Column({ space: 0 }) {
-                ForEach(this.tree, (item: DrawerTreeNode) => {
-                  this.DrawerRow(item)
-                }, (item: DrawerTreeNode) => this.itemKey(item))
-              }
+              TreeWebView({
+                treeJson: JSON.stringify(this.tree),
+                onSelect: (noteId: string, title: string) => {
+                  this.onOpenNote(noteId, title);
+                  this.onCloseDrawer();
+                },
+                onToggle: (noteId: string) => {
+                  for (let i = 0; i < this.tree.length; i++) {
+                    if (this.tree[i].noteId === noteId) {
+                      this.toggleNode(this.tree[i]);
+                      return;
+                    }
+                  }
+                }
+              })
               .width('100%')
-              .padding({ left: 10, right: 10, top: 8, bottom: 14 })
+              .height(620)
             }
 
             if (this.hasSyncError && this.cachedNotes.length > 0) {
@@ -1062,30 +1073,6 @@ export struct SideDrawer {
       .onRefreshing(() => {
         this.syncTree(true);
       })
-
-      Column() {
-        Button({ type: ButtonType.Capsule, stateEffect: true }) {
-          Row({ space: 7 }) {
-            AppIcon({
-              icon: $r('app.media.ic_plus'),
-              iconSize: 16,
-              tint: $r('app.color.text_on_primary')
-            })
-            Text('新建笔记')
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_on_primary'))
-          }
-          .justifyContent(FlexAlign.Center)
-        }
-        .width('100%')
-        .height(44)
-        .borderRadius(22)
-        .backgroundColor($r('app.color.primary'))
-        .onClick(this.onNewNote)
-      }
-      .width('100%')
-      .padding({ left: 14, right: 14, top: 6, bottom: 8 })
 
       Row() {
         Row({ space: 6 }) {

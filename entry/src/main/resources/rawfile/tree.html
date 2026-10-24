@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  :root { --bg:#1e1f22; --text:#e6e6e6; --muted:#9aa0a6; --line:#303338; --accent:#2f6fed; --hover:#2a2d32; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system,"HarmonyOS Sans SC","Segoe UI",sans-serif; overflow-x:hidden; }
+  body.light { --bg:#fafafa; --text:#202124; --muted:#6b7280; --line:#e3e6ea; --accent:#2563eb; --hover:#f0f2f5; }
+  #tree { padding:4px 8px 18px 8px; }
+  .row { display:flex; align-items:center; min-height:42px; padding:0 8px; border-radius:9px; cursor:pointer; box-sizing:border-box; }
+  .row:hover { background:var(--hover); }
+  .row.selected { background:var(--accent); color:#fff; }
+  .chev { width:22px; flex:0 0 22px; color:var(--muted); font-size:13px; text-align:center; }
+  .row.selected .chev { color:#dbe7ff; }
+  .glyph { width:22px; flex:0 0 22px; font-size:16px; text-align:center; opacity:.9; }
+  .label { flex:1; min-width:0; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:4px; }
+  .row.selected .label { color:#fff; }
+  .empty { padding:36px 20px; color:var(--muted); text-align:center; font-size:13px; }
+</style>
+</head>
+<body>
+  <div id="tree"></div>
+  <script>
+    (function () {
+      var rows = [];
+      var selected = '';
+      function bridge(name, a, b) {
+        try {
+          if (window.NativeTreeBridge && typeof window.NativeTreeBridge[name] === 'function') {
+            window.NativeTreeBridge[name](a, b || '');
+          }
+        } catch (e) {}
+      }
+      function rowHtml(item) {
+        var pad = 8 + Math.max(0, item.level || 0) * 15;
+        var selectedClass = item.selected ? ' selected' : '';
+        var chev = item.hasChildren ? (item.expanded ? '▾' : '▸') : '';
+        var glyph = item.type === 'book' ? '📁' : (item.type === 'image' || item.type === 'file' ? '📄' : '📝');
+        return '<div class="row' + selectedClass + '" data-id="' + encodeURIComponent(item.noteId) +
+          '" data-title="' + encodeURIComponent(item.title || '') + '" data-children="' +
+          (item.hasChildren ? '1' : '0') + '" style="padding-left:' + pad + 'px">' +
+          '<div class="chev">' + chev + '</div><div class="glyph">' + glyph + '</div>' +
+          '<div class="label">' + escapeHtml(item.title || '') + '</div></div>';
+      }
+      function escapeHtml(value) {
+        return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+      function render() {
+        var root = document.getElementById('tree');
+        if (!rows || rows.length === 0) {
+          root.innerHTML = '<div class="empty">暂无笔记</div>';
+          return;
+        }
+        root.innerHTML = rows.map(rowHtml).join('');
+        Array.prototype.forEach.call(root.querySelectorAll('.row'), function (el) {
+          el.addEventListener('click', function (event) {
+            var id = decodeURIComponent(el.getAttribute('data-id') || '');
+            var title = decodeURIComponent(el.getAttribute('data-title') || '');
+            var hasChildren = el.getAttribute('data-children') === '1';
+            var chev = el.querySelector('.chev');
+            var left = el.getBoundingClientRect().left;
+            if (hasChildren && event.clientX - left < 30) {
+              bridge('toggleNote', id);
+              return;
+            }
+            bridge('selectNote', id, title);
+          });
+        });
+      }
+      window.NativeTree = {
+        render: function (json) {
+          try { rows = JSON.parse(json || '[]'); selected = ''; render(); }
+          catch (e) { rows = []; render(); }
+        },
+        setTheme: function (theme) {
+          document.body.className = theme === 'light' ? 'light' : '';
+        },
+        scrollToSelected: function () {
+          var el = document.querySelector('.row.selected');
+          if (el) el.scrollIntoView({ block: 'center' });
+        }
+      };
+      bridge('ready', 'ok');
+    })();
+  </script>
+</body>
+</html>
