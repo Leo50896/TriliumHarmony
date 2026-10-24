@@ -40,7 +40,8 @@
             rawValue = cell.m !== undefined ? cell.m : '';
           }
           var item = { r: Number(r), c: Number(c),
-            v: rawValue !== undefined && rawValue !== null ? rawValue : '' };
+            v: cell.m !== undefined ? String(cell.m) :
+              (rawValue !== undefined && rawValue !== null ? rawValue : '') };
           if (cell.m !== undefined) item.m = String(cell.m);
           if (cell.f) item.f = cell.f;
           data.push(item);
@@ -51,8 +52,9 @@
     window.NativeSheet = {
       render: function (json) {
         try { workbook = JSON.parse(json || '{}'); } catch (e) { workbook = {}; }
-        var sheetMap = workbook.sheets || {};
-        var order = workbook.sheetOrder || Object.keys(sheetMap);
+        var wb = workbook.workbook || workbook;
+        var sheetMap = wb.sheets || {};
+        var order = wb.sheetOrder || Object.keys(sheetMap);
         sheetId = order.length > 0 ? order[0] : '';
         var sheet = sheetMap[sheetId] || {};
         var data = [{
@@ -111,13 +113,15 @@
             cellData[item.r][item.c] = cell;
           }
           workbook.sheets = workbook.sheets || {};
+          var wb = workbook.workbook || workbook;
+          wb.sheets = wb.sheets || {};
           if (!sheetId) {
             sheetId = 'sheet-01';
           }
-          workbook.sheets[sheetId] = workbook.sheets[sheetId] || {};
-          workbook.sheets[sheetId].cellData = cellData;
-          if (!workbook.sheetOrder || workbook.sheetOrder.length === 0) {
-            workbook.sheetOrder = [sheetId];
+          wb.sheets[sheetId] = wb.sheets[sheetId] || {};
+          wb.sheets[sheetId].cellData = cellData;
+          if (!wb.sheetOrder || wb.sheetOrder.length === 0) {
+            wb.sheetOrder = [sheetId];
           }
           return JSON.stringify(workbook);
         } catch (e) {
@@ -127,7 +131,8 @@
       getAndSend: function () {
         var live = luckysheet.getAllSheets()[0] || {};
         var merge = (live.config && live.config.merge) || [];
-        var sourceSheet = (workbook.sheets && workbook.sheets[sheetId]) || {};
+        var sourceBook = workbook.workbook || workbook;
+        var sourceSheet = (sourceBook.sheets && sourceBook.sheets[sheetId]) || {};
         var sourceMerge = sourceSheet.mergeData || [];
         var hasComplex = false;
         var cells = live.data || live.celldata || [];
