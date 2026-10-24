@@ -35,7 +35,9 @@ export struct SheetWebView {
 
   aboutToAppear(): void {
     this.bridge.onReady = () => {
-      this.inject();
+      // The first injection already happened in onPageEnd. Re-injecting here
+      // would destroy and recreate Luckysheet, producing a visible flicker.
+      this.ready = true;
     };
     this.bridge.onJson = (json: string) => {
       this.onJson(json);
