@@ -481,8 +481,29 @@ export struct BlockRichEditor {
     return result;
   }
 
+  private controllerText(): string {
+    let text: string = '';
+    const spans = this.controller.getSpans();
+    for (let i = 0; i < spans.length; i++) {
+      const span = spans[i] as RichEditorTextSpanResult;
+      if (span.value !== undefined) {
+        text += span.value;
+      }
+    }
+    return text;
+  }
+
   private commit(): void {
-    const segments: InlineSegment[] = this.buildSegments();
+    const currentText: string = this.controllerText();
+    const normalizedCurrent: string = currentText.replace(/[\r\n]+$/, '');
+    const normalizedOriginal: string = this.originalText.replace(/[\r\n]+$/, '');
+    const unchanged: boolean = normalizedCurrent === normalizedOriginal &&
+      this.boldOverride === null && this.italicOverride === null;
+    // Do not rebuild styles from RichEditor's read-back spans when the user did
+    // not edit anything (or only changed the heading level). Some devices report
+    // bold spans with a normalized 500 weight, which would silently strip
+    // <strong> on an innocent open/close.
+    const segments: InlineSegment[] = unchanged ? this.segments : this.buildSegments();
     const headingLevel: number = this.h1Active ? 1 : (this.h2Active ? 2 : 0);
     this.onCommit(segments, this.textOf(segments), headingLevel);
   }
