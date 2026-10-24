@@ -16,7 +16,6 @@ import { MermaidParser } from '../utils/MermaidParser';
 import { MarkdownParser } from '../utils/MarkdownParser';
 import { BOXICONS_ALL_MAP } from '../utils/BoxiconsMap';
 import { TriliumTable } from '../components/TriliumTable';
-import { NativeSheetView } from '../components/NativeSheetView';
 import { PdfViewer } from '../components/PdfViewer';
 import { TriliumCallout } from '../components/TriliumCallout';
 import { BlockRichEditor } from '../components/BlockRichEditor';
@@ -24,6 +23,7 @@ import { BlockTarget } from '../components/BlockTarget';
 import { BlockEditMode, BlockRendererRegistry, BlockRendererSpec } from '../components/BlockRenderer';
 import { ComplexBlockEditorHost } from '../components/ComplexBlockEditorHost';
 import { WebEditorView } from '../components/WebEditorView';
+import { SheetWebView } from '../components/SheetWebView';
 import { AuthSession } from '../models/AuthModels';
 import { CachedNote } from '../models/CacheModels';
 import {
@@ -188,6 +188,7 @@ export struct EditorView {
   @State private renderVersion: number = 0;
   @State private webEditing: boolean = false;
   @State private webEditorContent: string = '';
+  @State private webCodeHtml: string = '';
   @State private webSaveTick: number = 0;
   private webPushTimer: number = -1;
   @State private rawContent: string = '';
@@ -703,6 +704,13 @@ export struct EditorView {
     const cleanContent: string = this.decodeHtmlValue(content);
     this.rawContent = cleanContent;
     this.webEditorContent = cleanContent;
+    if (note.type === 'code') {
+      const language: string = this.attributeValue(note, 'language').toLowerCase();
+      const escaped: string = cleanContent.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      this.webCodeHtml = `<pre><code class="language-${language.length > 0 ? language : 'plaintext'}">` +
+        `${escaped}</code></pre>`;
+    }
     const webNoteId: string = note.noteId;
     this.hydrateWebImages(cleanContent, webNoteId).then((hydrated: string) => {
       if (this.note !== null && this.note.noteId === webNoteId) {
@@ -3972,15 +3980,29 @@ export struct EditorView {
                   .height(620)
                   .margin({ left: -22, right: -22 })
                 } else if (this.isSpreadsheet) {
-                  ForEach([this.activeSheet], (sheetIndex: number) => {
-                    NativeSheetView({
-                      content: this.spreadsheetContent,
-                      noteId: this.note !== null ? this.note.noteId : '',
-                      sheetIndex: sheetIndex
-                    })
-                    .width('100%')
-                    .margin({ left: 0, right: 0 })
-                  }, (sheetIndex: number) => `native-sheet-${sheetIndex}`)
+                  SheetWebView({
+                    content: this.spreadsheetContent
+                  })
+                  .width('100%')
+                  .height(720)
+                } else if (this.note.type === 'code') {
+                  WebEditorView({
+                    content: this.webCodeHtml,
+                    readOnly: true,
+                    saveTick: 0,
+                    noteId: this.note.noteId,
+                    onHtml: (html: string) => {
+                    },
+                    onLink: (noteId: string) => {
+                      this.onWebLink(noteId);
+                    },
+                    onError: (message: string) => {
+                      console.error(`CODE_WEB_ERROR ${message}`);
+                    }
+                  })
+                  .width('100%')
+                  .height(720)
+                  .margin({ left: -22, right: -22 })
                 } else if (this.note.type !== 'text' && this.note.type !== 'code' && this.note.type !== 'book') {
                   Text(`暂不支持该文件类型（type: ${this.note.type}, mime: ${this.note.mime}）`)
                     .fontSize(13)

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="luckysheet/plugins/css/pluginsCss.css">
+<link rel="stylesheet" href="luckysheet/plugins/plugins.css">
+<link rel="stylesheet" href="luckysheet/css/luckysheet.css">
+<link rel="stylesheet" href="luckysheet/assets/iconfont/iconfont.css">
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#0D131C; overflow:hidden; }
+  #luckysheet { position:absolute; inset:0; }
+  .luckysheet_info_detail, .luckysheet-sheet-container { display:none !important; }
+</style>
+</head>
+<body>
+<div id="luckysheet"></div>
+<script src="luckysheet/plugins/js/plugin.js"></script>
+<script src="luckysheet/luckysheet.umd.js"></script>
+<script>
+  (function () {
+    var created = false;
+    function bridge(name, value) {
+      try {
+        if (window.NativeSheetBridge && typeof window.NativeSheetBridge[name] === 'function') {
+          window.NativeSheetBridge[name](value);
+        }
+      } catch (e) {}
+    }
+    function toCellData(sheet) {
+      var data = [];
+      var cellData = sheet.cellData || {};
+      Object.keys(cellData).forEach(function (r) {
+        Object.keys(cellData[r] || {}).forEach(function (c) {
+          var cell = cellData[r][c] || {};
+          var item = { r: Number(r), c: Number(c), v: cell.v !== undefined ? cell.v : '' };
+          if (cell.m !== undefined) item.m = String(cell.m);
+          if (cell.f) item.f = cell.f;
+          data.push(item);
+        });
+      });
+      return data;
+    }
+    window.NativeSheet = {
+      render: function (json) {
+        var workbook = {};
+        try { workbook = JSON.parse(json || '{}'); } catch (e) { workbook = {}; }
+        var sheets = workbook.sheets || [];
+        var sheet = sheets[0] || {};
+        var data = [{
+          name: sheet.name || 'Sheet1',
+          color: '#0A84FF',
+          status: '1',
+          order: '0',
+          celldata: toCellData(sheet),
+          config: {}
+        }];
+        if (created && window.luckysheet && luckysheet.getAllSheets) {
+          luckysheet.destroy();
+          created = false;
+        }
+        luckysheet.create({
+          container: 'luckysheet',
+          data: data,
+          lang: 'zh',
+          showinfobar: false,
+          showtoolbar: false,
+          showsheetbar: false,
+          showstatisticBar: false,
+          allowEdit: false,
+          enableAddRow: false,
+          enableAddBackTop: false,
+          hook: {
+            workbookCreateAfter: function () {
+              created = true;
+              bridge('ready', 'ok');
+            }
+          }
+        });
+      },
+      setReadOnly: function (readOnly) {
+        try {
+          if (window.luckysheet && luckysheet.setAllowEdit) {
+            luckysheet.setAllowEdit(!readOnly);
+          }
+        } catch (e) {}
+      }
+    };
+  })();
+</script>
+</body>
+</html>

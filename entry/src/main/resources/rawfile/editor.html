@@ -130,6 +130,20 @@
     <div id="editor"></div>
     <div id="error"></div>
   </div>
+  <link rel="stylesheet" href="prism-tomorrow.css">
+  <script src="prism.js"></script>
+  <script src="prism-components/prism-typescript.min.js"></script>
+  <script src="prism-components/prism-python.min.js"></script>
+  <script src="prism-components/prism-bash.min.js"></script>
+  <script src="prism-components/prism-json.min.js"></script>
+  <script src="prism-components/prism-sql.min.js"></script>
+  <script src="prism-components/prism-java.min.js"></script>
+  <script src="prism-components/prism-c.min.js"></script>
+  <script src="prism-components/prism-cpp.min.js"></script>
+  <script src="prism-components/prism-csharp.min.js"></script>
+  <script src="prism-components/prism-go.min.js"></script>
+  <script src="prism-components/prism-rust.min.js"></script>
+  <script src="prism-components/prism-markdown.min.js"></script>
   <script src="ckeditor.js"></script>
   <script>
     (function () {
@@ -238,6 +252,7 @@
             }, true);
             setTimeout(function () {
               bridge('postReady', 'ok');
+              if (window.Prism) Prism.highlightAll();
             }, 60);
           }).catch(function (error) {
             document.getElementById('error').style.display = 'block';
@@ -251,6 +266,7 @@
           try {
             if (editor.getData() !== pendingHtml) {
               editor.setData(pendingHtml);
+              setTimeout(function () { if (window.Prism) Prism.highlightAll(); }, 30);
             }
           } catch (e) {
             bridge('postError', String(e));
