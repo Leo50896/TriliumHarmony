@@ -1065,24 +1065,13 @@ export struct EditorView {
   }
 
   private requestComplexEdit(block: ContentBlock, startRaw: boolean = false): void {
-    if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
-      this.isSaving || this.isEditing || this.isRichEditing) {
-      return;
-    }
-    if (block.kind !== ContentBlockKind.IMAGE && block.kind !== ContentBlockKind.TABLE &&
-      block.kind !== ContentBlockKind.CALLOUT) {
-      return;
-    }
-    this.complexEditStartRaw = startRaw;
-    this.complexEditBlock = block;
+    // Reading mode is intentionally read-only. All edits go through the
+    // top-right 编辑 button, which opens the full rich/source editor.
+    return;
   }
 
   private openComplexMenu(block: ContentBlock): void {
-    if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
-      this.isSaving || this.isEditing || this.isRichEditing) {
-      return;
-    }
-    this.complexMenuBlock = block;
+    return;
   }
 
   private closeComplexMenu(): void {
@@ -1147,13 +1136,7 @@ export struct EditorView {
   }
 
   private requestCodeEdit(block: ContentBlock): void {
-    if (block.kind !== ContentBlockKind.CODE || this.note === null || this.isSaving ||
-      this.isEditing || this.isRichEditing) {
-      return;
-    }
-    this.codeEditTarget = BlockTarget.forBlock(block.id, block.kind);
-    this.codeEditText = block.codeLines.join('\n');
-    this.codeEditLanguage = block.language;
+    return;
   }
 
   private closeCodeEdit(): void {
@@ -1199,22 +1182,8 @@ export struct EditorView {
   }
 
   private handleRequestEdit(target: BlockTarget): void {
-    const block: ContentBlock | null = this.blockForTarget(target);
-    if (block === null || !this.canBlockEdit(block) ||
-      (this.editingTarget !== null && this.editingTarget.isSame(target))) {
-      return;
-    }
-    if (this.editingTarget !== null) {
-      this.pendingBlockEditTarget = target;
-      this.getUIContext().getFocusController().clearFocus();
-      setTimeout(() => {
-        if (this.editingTarget === null && this.pendingBlockEditTarget !== null) {
-          this.beginBlockEdit(this.pendingBlockEditTarget);
-        }
-      }, 180);
-      return;
-    }
-    this.beginBlockEdit(target);
+    // Reading mode must never enter inline block editing.
+    return;
   }
 
   private beginBlockEdit(target: BlockTarget): void {
