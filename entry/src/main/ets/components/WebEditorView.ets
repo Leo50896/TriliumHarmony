@@ -1,7 +1,10 @@
 import { webview } from '@kit.ArkWeb';
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { StateKeys } from '../constants/StateKeys';
 import { ImageDiskCache } from '../services/ImageDiskCache';
+import { EtapiService } from '../services/EtapiService';
+import { SessionStore } from '../services/SessionStore';
 
 class EditorBridge {
   onHtml: (html: string) => void = () => {};
@@ -47,6 +50,7 @@ export struct WebEditorView {
   @State private pageReady: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: EditorBridge = new EditorBridge();
+  private downloading: Set<string> = new Set();
 
   aboutToAppear(): void {
     this.bridge.onHtml = (html: string) => {
@@ -116,7 +120,11 @@ export struct WebEditorView {
     const key: string = ImageDiskCache.keyForSync(serverUrl ?? '', url);
     const buffer: ArrayBuffer | null = ImageDiskCache.readBufferSync(context, key);
     if (buffer === null) {
-      return null;
+      // Never let a cache miss fall through to an unauthenticated WebView
+      // request. Return a transparent placeholder immediately and replace the
+      // corresponding <img> asynchronously after the token download finishes.
+      this.downloadAndReplace(url, context, key);
+      return this.placeholderResponse();
     }
     let mime: string = 'image/jpeg';
     const lower: string = url.toLowerCase();
@@ -130,6 +138,51 @@ export struct WebEditorView {
     const response: WebResourceResponse = new WebResourceResponse();
     response.setResponseData(buffer);
     response.setResponseMimeType(mime);
+    response.setResponseEncoding('binary');
+    response.setResponseCode(200);
+    return response;
+  }
+
+  private async downloadAndReplace(url: string, context: common.UIAbilityContext,
+    key: string): Promise<void> {
+    if (this.downloading.has(url)) {
+      return;
+    }
+    this.downloading.add(url);
+    try {
+      const session = await SessionStore.currentSession();
+      if (session === null) {
+        return;
+      }
+      const binary = await EtapiService.fetchUrlBinary(session, url);
+      await ImageDiskCache.write(context, key, binary.data);
+      const base64: string = new util.Base64Helper().encodeToStringSync(
+        new Uint8Array(binary.data));
+      const dataUri: string = `data:${binary.mime};base64,${base64}`;
+      const src: string = this.scriptString(url);
+      const data: string = this.scriptString(dataUri);
+      this.controller.runJavaScript(
+        `document.querySelectorAll('img').forEach(function(img){` +
+        `if(img.getAttribute('src')===${src}||img.src.indexOf(${src})>=0){img.src=${data};}})`);
+    } catch (error) {
+      console.error(`WEB_IMAGE_INTERCEPT_FAILED ${url}`);
+    } finally {
+      this.downloading.delete(url);
+    }
+  }
+
+  private placeholderResponse(): WebResourceResponse {
+    const response: WebResourceResponse = new WebResourceResponse();
+    // 1x1 transparent PNG.
+    const bytes: Uint8Array = new Uint8Array([
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+      0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137,
+      0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 252, 207, 192, 240,
+      31, 0, 3, 3, 1, 0, 24, 221, 141, 224, 0, 0, 0, 0, 73, 69,
+      78, 68, 174, 66, 96, 130
+    ]);
+    response.setResponseData(bytes.buffer as ArrayBuffer);
+    response.setResponseMimeType('image/png');
     response.setResponseEncoding('binary');
     response.setResponseCode(200);
     return response;

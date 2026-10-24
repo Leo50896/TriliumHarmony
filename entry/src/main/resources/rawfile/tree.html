@@ -79,6 +79,14 @@
         host.innerHTML = rows.map(row).join('');
         Array.prototype.forEach.call(host.querySelectorAll('.row'), function (el) {
           var id = decodeURIComponent(el.getAttribute('data-id') || '');
+          var chevron = el.querySelector('.chev');
+          if (chevron) {
+            chevron.addEventListener('click', function (event) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              bridge('toggleNote', id);
+            }, true);
+          }
           el.addEventListener('click', function (event) {
             var rect = el.getBoundingClientRect();
             var hasChildren = el.getAttribute('data-children') === '1';

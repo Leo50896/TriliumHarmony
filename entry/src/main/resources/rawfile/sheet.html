@@ -112,20 +112,19 @@
         var merge = (live.config && live.config.merge) || [];
         var sourceSheet = (workbook.sheets && workbook.sheets[0]) || {};
         var sourceMerge = sourceSheet.mergeData || [];
-        var hasStyle = false;
+        var hasComplex = false;
         var cells = live.data || live.celldata || [];
         for (var i = 0; i < cells.length; i++) {
-          if (cells[i] && cells[i].s && Object.keys(cells[i].s).length > 0) {
-            hasStyle = true;
-            break;
-          }
-          if (cells[i] && cells[i].mc) {
-            hasStyle = true;
+          if (cells[i] && cells[i].f) {
+            hasComplex = true;
             break;
           }
         }
-        if (merge.length > 0 || sourceMerge.length > 0 || hasStyle) {
-          bridge('showAlert', '包含合并单元格或复杂格式的表格暂不支持手机端保存，请前往桌面端修改。');
+        if (sourceSheet.dataVerification && sourceSheet.dataVerification.length > 0) {
+          hasComplex = true;
+        }
+        if (merge.length > 0 || sourceMerge.length > 0 || hasComplex) {
+          bridge('showAlert', '包含合并单元格、公式或数据验证的表格暂不支持手机端保存，请前往桌面端修改。');
           return false;
         }
         bridge('json', this.getJson());
