@@ -134,11 +134,54 @@ export class TriliumCodec {
         return `<p>${TriliumCodec.serializeInlineHtml(block.segments)}</p>`;
       case ContentBlockKind.LIST:
         return TriliumCodec.serializeHtmlList(block);
+      case ContentBlockKind.TABLE:
+        return TriliumCodec.serializeHtmlTable(block);
       case ContentBlockKind.IMAGE:
         return TriliumCodec.serializeHtmlImage(block);
       default:
         return block.raw.length > 0 ? block.raw : block.text;
     }
+  }
+
+  private static serializeHtmlTable(block: ContentBlock): string {
+    if (block.table === null) {
+      return block.raw;
+    }
+    let html: string = '<table>';
+    if (block.table.caption.length > 0) {
+      html += `<caption>${TriliumCodec.escapeHtml(block.table.caption)}</caption>`;
+    }
+    for (let r = 0; r < block.table.rows.length; r++) {
+      const row = block.table.rows[r];
+      html += '<tr>';
+      for (let c = 0; c < row.cells.length; c++) {
+        const cell = row.cells[c];
+        if (cell.continuation) {
+          continue;
+        }
+        const tag: string = cell.header ? 'th' : 'td';
+        let attrs: string = '';
+        if (cell.colspan > 1) {
+          attrs += ` colspan="${cell.colspan}"`;
+        }
+        if (cell.rowspan > 1) {
+          attrs += ` rowspan="${cell.rowspan}"`;
+        }
+        if (cell.align.length > 0) {
+          attrs += ` style="text-align:${TriliumCodec.escapeHtml(cell.align)}"`;
+        }
+        let content: string = TriliumCodec.serializeInlineHtml(cell.segments);
+        for (let i = 0; i < cell.images.length; i++) {
+          const image = cell.images[i];
+          content += `<img src="${TriliumCodec.escapeHtml(image.src)}" ` +
+            `alt="${TriliumCodec.escapeHtml(image.alt)}">`;
+        }
+        html += `<${tag}${attrs}>${content}</${tag}>`;
+      }
+      html += '</tr>';
+    }
+    html += '</table>';
+    return html;
   }
 
   private static serializeHtmlImage(block: ContentBlock): string {

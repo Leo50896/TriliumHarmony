@@ -1,10 +1,42 @@
 import {
   ContentBlock,
   ContentBlockKind,
-  ImageData
+  ImageData,
+  InlineSegment,
+  TableCell,
+  TableData,
+  TableRow
 } from '../utils/HtmlContentParser';
 import { TriliumCodec } from '../utils/codec/TriliumCodec';
 import { TriliumImage } from './TriliumImage';
+
+class EditableCell {
+  text: string;
+  rowSpan: number;
+  colSpan: number;
+  header: boolean;
+  continuation: boolean;
+  source: TableCell | null;
+
+  constructor(text: string, rowSpan: number = 1, colSpan: number = 1,
+    header: boolean = false, continuation: boolean = false,
+    source: TableCell | null = null) {
+    this.text = text;
+    this.rowSpan = rowSpan;
+    this.colSpan = colSpan;
+    this.header = header;
+    this.continuation = continuation;
+    this.source = source;
+  }
+}
+
+class EditableRow {
+  cells: EditableCell[];
+
+  constructor(cells: EditableCell[]) {
+    this.cells = cells;
+  }
+}
 
 export interface ComplexBlockEditorParams {
   block: ContentBlock;
@@ -35,10 +67,23 @@ export struct ComplexBlockEditorHost {
   @State private widthPercent: number = 0;
   @State private widthPx: number = 0;
   @State private heightPx: number = 0;
+  @State private tableRows: EditableRow[] = [];
 
   aboutToAppear(): void {
     this.rawHtml = this.block.raw;
-    this.rawMode = this.block.kind !== ContentBlockKind.IMAGE;
+    this.rawMode = this.block.kind === ContentBlockKind.CALLOUT;
+    if (this.block.table !== null) {
+      for (let r = 0; r < this.block.table.rows.length; r++) {
+        const row: TableRow = this.block.table.rows[r];
+        const cells: EditableCell[] = [];
+        for (let c = 0; c < row.cells.length; c++) {
+          const cell: TableCell = row.cells[c];
+          cells.push(new EditableCell(cell.text(), cell.rowspan, cell.colspan,
+            cell.header, cell.continuation, cell));
+        }
+        this.tableRows.push(new EditableRow(cells));
+      }
+    }
     if (this.block.image !== null) {
       const image: ImageData = this.block.image;
       this.src = image.src;
@@ -96,12 +141,218 @@ export struct ComplexBlockEditorHost {
     this.onSave(next);
   }
 
+  private canChangeTableShape(): boolean {
+    for (let r = 0; r < this.tableRows.length; r++) {
+      for (let c = 0; c < this.tableRows[r].cells.length; c++) {
+        const cell: EditableCell = this.tableRows[r].cells[c];
+        if (cell.rowSpan > 1 || cell.colSpan > 1 || cell.continuation) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private addTableRow(): void {
+    let columns: number = 1;
+    for (let r = 0; r < this.tableRows.length; r++) {
+      columns = Math.max(columns, this.tableRows[r].cells.length);
+    }
+    const cells: EditableCell[] = [];
+    for (let c = 0; c < columns; c++) {
+      cells.push(new EditableCell('', 1, 1, false, false, null));
+    }
+    this.tableRows.push(new EditableRow(cells));
+    this.tableRows = this.tableRows.slice();
+  }
+
+  private addTableColumn(): void {
+    if (!this.canChangeTableShape()) {
+      return;
+    }
+    for (let r = 0; r < this.tableRows.length; r++) {
+      this.tableRows[r].cells.push(new EditableCell('', 1, 1, false, false, null));
+    }
+    this.tableRows = this.tableRows.slice();
+  }
+
+  private syncRowspans(): void {
+    for (let r = 0; r < this.tableRows.length; r++) {
+      const row: EditableRow = this.tableRows[r];
+      for (let c = 0; c < row.cells.length; c++) {
+        const cell: EditableCell = row.cells[c];
+        if (cell.continuation || cell.rowSpan <= 1) {
+          continue;
+        }
+        for (let offset = 1; offset < cell.rowSpan; offset++) {
+          const targetRow: EditableRow | undefined = this.tableRows[r + offset];
+          if (targetRow === undefined || c >= targetRow.cells.length) {
+            continue;
+          }
+          const target: EditableCell = targetRow.cells[c];
+          if (target.continuation) {
+            target.text = cell.text;
+            target.header = cell.header;
+          }
+        }
+      }
+    }
+  }
+
+  private saveTable(): void {
+    this.syncRowspans();
+    const rows: TableRow[] = [];
+    for (let r = 0; r < this.tableRows.length; r++) {
+      const cells: TableCell[] = [];
+      const editableRow: EditableRow = this.tableRows[r];
+      for (let c = 0; c < editableRow.cells.length; c++) {
+        const cell: EditableCell = editableRow.cells[c];
+        const source: TableCell | null = cell.source;
+        const unchanged: boolean = source !== null && source.text() === cell.text;
+        const segments: InlineSegment[] = unchanged ?
+          (source as TableCell).segments : [new InlineSegment(cell.text)];
+        const images: ImageData[] = unchanged ? (source as TableCell).images : [];
+        const nextCell: TableCell = new TableCell(segments, cell.header, cell.colSpan,
+          cell.rowSpan, images, cell.continuation, false);
+        if (source !== null) {
+          nextCell.align = source.align;
+          nextCell.attrs = source.attrs;
+        }
+        cells.push(nextCell);
+      }
+      rows.push(new TableRow(cells, editableRow.cells.length > 0 &&
+        editableRow.cells[0].header));
+    }
+    const table: TableData = new TableData(rows);
+    if (this.block.table !== null) {
+      table.caption = this.block.table.caption;
+      table.columnWidths = this.block.table.columnWidths;
+      table.headerRowCount = this.block.table.headerRowCount;
+      table.footerRowCount = this.block.table.footerRowCount;
+      table.attrs = this.block.table.attrs;
+    }
+    const next: ContentBlock = new ContentBlock(this.block.kind, this.block.text,
+      this.block.level, this.block.codeLines, this.block.language, this.block.segments,
+      this.block.listItems, table, this.block.image, this.block.listMarkers,
+      this.block.callout, this.block.include, this.block.listLevels, this.block.indent,
+      this.block.quoteBlocks, this.block.id, this.block.raw, this.block.source);
+    next.attrs = this.block.attrs;
+    next.children = this.block.children;
+    next.dirty = true;
+    next.serializeMode = 'model';
+    this.onSave(next);
+  }
+
   private save(): void {
-    if (this.rawMode || this.block.kind !== ContentBlockKind.IMAGE) {
+    if (this.rawMode || this.block.kind === ContentBlockKind.CALLOUT) {
       this.saveRaw();
+    } else if (this.block.kind === ContentBlockKind.TABLE) {
+      this.saveTable();
     } else {
       this.saveImage();
     }
+  }
+
+  @Builder
+  private TablePanel() {
+    Column({ space: 10 }) {
+      Row({ space: 8 }) {
+        Text('添加行')
+          .fontSize(12)
+          .fontColor($r('app.color.primary'))
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .borderRadius(6)
+          .backgroundColor($r('app.color.primary_soft'))
+          .onClick(() => {
+            this.addTableRow();
+          })
+        Text('添加列')
+          .fontSize(12)
+          .fontColor(this.canChangeTableShape() ? $r('app.color.primary') :
+            $r('app.color.text_tertiary'))
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .borderRadius(6)
+          .backgroundColor(this.canChangeTableShape() ? $r('app.color.primary_soft') :
+            $r('app.color.bg_secondary'))
+          .onClick(() => {
+            this.addTableColumn();
+          })
+        Blank()
+        Text('高级：原始 HTML')
+          .fontSize(12)
+          .fontColor($r('app.color.text_tertiary'))
+          .onClick(() => {
+            this.rawMode = true;
+          })
+      }
+      .width('100%')
+
+      Text('跨行/跨列、表头与单元格图片会保留；复杂表格暂不支持增删行列。')
+        .fontSize(11)
+        .fontColor($r('app.color.text_tertiary'))
+
+      Scroll() {
+        Column({ space: 1 }) {
+          ForEach(this.tableRows, (row: EditableRow, rowIndex: number) => {
+            Row({ space: 1 }) {
+              ForEach(row.cells, (cell: EditableCell, cellIndex: number) => {
+                if (cell.continuation) {
+                  Column() {
+                    Text('↳')
+                      .fontSize(11)
+                      .fontColor($r('app.color.text_tertiary'))
+                  }
+                  .width(126 * Math.max(cell.colSpan, 1))
+                  .height(62)
+                  .padding(4)
+                  .backgroundColor($r('app.color.bg_secondary'))
+                  .border({ width: 1, color: $r('app.color.table_cell_border') })
+                } else {
+                  Column({ space: 4 }) {
+                    TextInput({ text: cell.text, placeholder: '单元格' })
+                      .width('100%')
+                      .height(32)
+                      .fontSize(12)
+                      .onChange((value: string) => {
+                        cell.text = value;
+                      })
+                    Row({ space: 6 }) {
+                      Text(cell.header ? '表头' : '普通')
+                        .fontSize(10)
+                        .fontColor(cell.header ? $r('app.color.primary') :
+                          $r('app.color.text_tertiary'))
+                        .onClick(() => {
+                          cell.header = !cell.header;
+                          this.tableRows = this.tableRows.slice();
+                        })
+                      if (cell.colSpan > 1 || cell.rowSpan > 1) {
+                        Text(`${cell.colSpan}×${cell.rowSpan}`)
+                          .fontSize(10)
+                          .fontColor($r('app.color.text_tertiary'))
+                      }
+                    }
+                  }
+                  .width(126 * Math.max(cell.colSpan, 1))
+                  .height(62)
+                  .padding(4)
+                  .backgroundColor(cell.header ? $r('app.color.table_header_bg') :
+                    $r('app.color.bg_primary'))
+                  .border({ width: 1, color: $r('app.color.table_cell_border') })
+                }
+              }, (cell: EditableCell, cellIndex: number) =>
+                `${rowIndex}-${cellIndex}-${cell.text}-${cell.header}`)
+            }
+          }, (row: EditableRow, rowIndex: number) => `table-row-${rowIndex}`)
+        }
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -240,10 +491,13 @@ export struct ComplexBlockEditorHost {
           .onClick(() => {
             this.rawMode = true;
           })
+      } else if (this.block.kind === ContentBlockKind.TABLE && !this.rawMode) {
+        this.TablePanel()
       } else {
         this.RawPanel()
-        if (this.block.kind === ContentBlockKind.IMAGE) {
-          Text('返回属性面板')
+        if (this.block.kind === ContentBlockKind.IMAGE ||
+          this.block.kind === ContentBlockKind.TABLE) {
+          Text(this.block.kind === ContentBlockKind.TABLE ? '返回表格编辑' : '返回属性面板')
             .fontSize(12)
             .fontColor($r('app.color.text_tertiary'))
             .padding({ top: 8, bottom: 8 })
