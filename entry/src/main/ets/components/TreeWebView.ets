@@ -1,4 +1,4 @@
-import { webview } from '@kit.ArkWeb';
+﻿import { webview } from '@kit.ArkWeb';
 import { StateKeys } from '../constants/StateKeys';
 
 class TreeBridge {
@@ -69,12 +69,12 @@ export struct TreeWebView {
                 .width(20)
                 .height(20)
                 .borderRadius(5)
-                .backgroundColor('#2a2d32')
+                .backgroundColor('#17212D')
               Column()
                 .width(`${72 - (index % 3) * 12}%`)
                 .height(13)
                 .borderRadius(4)
-                .backgroundColor('#2a2d32')
+                .backgroundColor('#17212D')
               Blank()
             }
             .width('100%')
@@ -84,13 +84,13 @@ export struct TreeWebView {
         }
         .width('100%')
         .padding({ top: 12 })
-        .backgroundColor('#1e1f22')
+        .backgroundColor('#101823')
       }
 
       Web({ src: $rawfile('tree.html'), controller: this.controller })
         .width('100%')
         .height('100%')
-        .backgroundColor('#1e1f22')
+        .backgroundColor('#101823')
         .javaScriptAccess(true)
         .domStorageAccess(true)
         .horizontalScrollBarAccess(false)
@@ -110,3 +110,4 @@ export struct TreeWebView {
     .height('100%')
   }
 }
+

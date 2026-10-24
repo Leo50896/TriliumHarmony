@@ -12,9 +12,9 @@
     font-style: normal;
     font-display: block;
   }
-  :root { --bg:#1e1f22; --text:#e6e6e6; --muted:#9aa0a6; --line:#303338; --accent:#2f6fed; --hover:#2a2d32; }
+  :root { --bg:#101823; --text:#F2F6FB; --muted:#8C99AA; --line:#263241; --accent:#0A84FF; --hover:#17212D; }
   html,body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system,"HarmonyOS Sans SC","Segoe UI",sans-serif; overflow-x:hidden; }
-  body.light { --bg:#fafafa; --text:#202124; --muted:#6b7280; --line:#e3e6ea; --accent:#2563eb; --hover:#f0f2f5; }
+  body.light { --bg:#f7f8fa; --text:#202124; --muted:#6b7280; --line:#e3e6ea; --accent:#2563eb; --hover:#f0f2f5; }
   #tree { padding:4px 8px 18px 8px; }
   .row { display:flex; align-items:center; min-height:38px; padding:0 8px; border-radius:8px; cursor:pointer; box-sizing:border-box; }
   .row:hover { background:var(--hover); }
@@ -64,6 +64,7 @@
         var selected = item.noteId === active ? ' selected' : '';
         var chev = item.hasChildren ? (item.expanded ? 'bx bx-chevron-down' : 'bx bx-chevron-right') : '';
         return '<div class="row' + selected + '" data-id="' + encodeURIComponent(item.noteId) +
+          '" data-children="' + (item.hasChildren ? '1' : '0') +
           '" style="padding-left:' + pad + 'px">' +
           '<div class="chev">' + (chev ? '<i class="' + chev + '"></i>' : '') + '</div>' +
           '<div class="icon"><i class="' + iconClass(item) + '"></i></div>' +
@@ -78,16 +79,19 @@
         host.innerHTML = rows.map(row).join('');
         Array.prototype.forEach.call(host.querySelectorAll('.row'), function (el) {
           var id = decodeURIComponent(el.getAttribute('data-id') || '');
-          el.addEventListener('click', function () {
-            bridge('onNoteSelected', id);
-          });
-          var chevron = el.querySelector('.chev');
-          if (chevron) {
-            chevron.addEventListener('click', function (event) {
+          el.addEventListener('click', function (event) {
+            var rect = el.getBoundingClientRect();
+            var hasChildren = el.getAttribute('data-children') === '1';
+            var onChevron = event.target && event.target.closest &&
+              event.target.closest('.chev') !== null;
+            if (hasChildren && (onChevron || event.clientX - rect.left < 34)) {
+              event.preventDefault();
               event.stopPropagation();
               bridge('toggleNote', id);
-            });
-          }
+              return;
+            }
+            bridge('onNoteSelected', id);
+          });
         });
       }
       window.renderTree = function (json) {
