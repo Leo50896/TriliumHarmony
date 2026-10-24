@@ -35,6 +35,7 @@
 | 2.1 主阅读/编辑页 | `views/EditorView.ets` + `utils/HtmlContentParser.ets` | 真实正文、Callout、行内样式、图片预览缩放、表格卡片、轻编辑 |
 | 2.2 设置页 | `views/SettingsView.ets` | HarmonyOS 风格分组卡片、图标色块、开关、滑杆、退出登录 |
 | 系统返回 | `pages/Index.ets` + `views/MainView.ets` | 抽屉 → 设置/许可/地图逐级返回；阅读页根界面退出，并保留当前笔记与阅读位置 |
+| 阅读手势 | `views/MainView.ets` | 阅读页从左侧向右滑动唤出侧边抽屉；打开抽屉时禁用再入手势 |
 | 2. 侧边抽屉 | `components/SideDrawer.ets` + `services/EtapiService.ets` | ETAPI 真实目录、懒加载展开/折叠、下拉刷新、搜索、同步状态 |
 | 全局状态 / 内部链接 | `services/SessionStore.ets` + `HttpService.ets` + `TriliumLinkRouter.ets` | AppStorage 会话订阅、401 收口、`#root/<id>` 原地切换 |
 | 全局搜索 | `components/SearchView.ets` + `services/SearchService.ets` | bindSheet、ETAPI 搜索、路径/正文片段、结果切换 |

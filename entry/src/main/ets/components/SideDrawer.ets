@@ -66,6 +66,7 @@ export struct SideDrawer {
   private mockItems: DrawerItem[] = createDrawerItems();
   private didAutoExpand: boolean = false;
   private lastSyncAt: number = 0;
+  private drawerSyncTimer: number = -1;
 
   aboutToAppear(): void {
     this.initialize();
@@ -132,6 +133,9 @@ export struct SideDrawer {
       this.noteCache = new Map();
       const computedChildren: Map<string, string[]> = new Map();
       for (let index: number = 0; index < notes.length; index++) {
+        if (index > 0 && index % 20 === 0) {
+          await this.yieldToUi();
+        }
         const note: TriliumNote = notes[index];
         if (note.noteId === '3UZWsA8HXqWH') {
           console.info(`UI_ATTR_LOAD id=${note.noteId} attrs=${JSON.stringify(note.attributes)}`);
@@ -218,7 +222,14 @@ export struct SideDrawer {
   }
 
   private onVisibleChanged(): void {
-    if (!this.visible || this.isSyncing || MockConfig.USE_MOCK) {
+    if (!this.visible) {
+      if (this.drawerSyncTimer !== -1) {
+        clearTimeout(this.drawerSyncTimer);
+        this.drawerSyncTimer = -1;
+      }
+      return;
+    }
+    if (this.isSyncing || MockConfig.USE_MOCK) {
       return;
     }
     if (AppStorage.get<boolean>(StateKeys.EDITOR_EDITING) === true) {
@@ -227,7 +238,26 @@ export struct SideDrawer {
     if (Date.now() - this.lastSyncAt < 3000) {
       return;
     }
-    this.syncTree(false, true);
+    this.scheduleDrawerSync();
+  }
+
+  private scheduleDrawerSync(): void {
+    if (this.drawerSyncTimer !== -1) {
+      clearTimeout(this.drawerSyncTimer);
+    }
+    this.drawerSyncTimer = setTimeout(() => {
+      this.drawerSyncTimer = -1;
+      if (!this.visible || this.isSyncing) {
+        return;
+      }
+      this.syncTree(false, true);
+    }, 1200);
+  }
+
+  private yieldToUi(): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => resolve(), 0);
+    });
   }
 
   private onTokenChanged(): void {

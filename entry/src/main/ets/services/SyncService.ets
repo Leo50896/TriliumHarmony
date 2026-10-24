@@ -60,6 +60,9 @@ export class SyncService {
     let deletes: number = 0;
 
     for (let index: number = 0; index < remote.length; index++) {
+      if (index > 0 && index % 8 === 0) {
+        await SyncService.yieldToUi();
+      }
       const note: TriliumNote = remote[index];
       const existing: TriliumNote | undefined = localById.get(note.noteId);
       if (existing !== undefined && JSON.stringify(existing.parentNoteIds) !==
@@ -100,6 +103,9 @@ export class SyncService {
 
     if (remote.length > 0) {
       for (let index: number = 0; index < local.length; index++) {
+        if (index > 0 && index % 20 === 0) {
+          await SyncService.yieldToUi();
+        }
         const noteId: string = local[index].noteId;
         if (!remoteIds.has(noteId) && !SyncService.isSystemNote(noteId)) {
           console.info(`ETAPI_DELTA delete id=${noteId}`);
@@ -159,5 +165,11 @@ export class SyncService {
       return new SyncResult(true, count, '');
     }
     return SyncService.etapiDelta(context, session, accountKey);
+  }
+
+  private static yieldToUi(): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => resolve(), 0);
+    });
   }
 }

@@ -19,6 +19,7 @@ export struct MainView {
   // the reader/editor. This matches the "hamburger -> drawer" flow requested
   // for the first post-login screen.
   @State @Watch('onDrawerVisibilityChanged') private showDrawer: boolean = true;
+  @State private sidebarGestureEnabled: boolean = true;
   @State private currentView: string = 'editor';
   @StorageProp(StateKeys.SELECTED_NOTE_ID) @Watch('onSelectedNoteChanged')
   private selectedNoteId: string = '';
@@ -108,6 +109,12 @@ export struct MainView {
 
   private closeDrawer(): void {
     this.showDrawer = false;
+    this.sidebarGestureEnabled = false;
+    setTimeout(() => {
+      if (!this.showDrawer) {
+        this.sidebarGestureEnabled = true;
+      }
+    }, 350);
     const tick: number = AppStorage.get<number>('TEXT_SELECTION_DISMISS') ?? 0;
     AppStorage.setOrCreate('TEXT_SELECTION_DISMISS', tick + 1);
     this.updateBackAvailable();
@@ -231,11 +238,19 @@ export struct MainView {
     .maxSideBarWidth(340)
     .showControlButton(false)
     .showSideBar(this.showDrawer)
-    .showSideBarWithGesture(false)
+    .showSideBarWithGesture(this.sidebarGestureEnabled)
     .autoHide(false)
     .divider({ strokeWidth: 0 })
     .onChange((isShown: boolean) => {
       this.showDrawer = isShown;
+      this.sidebarGestureEnabled = !isShown;
+      if (!isShown) {
+        setTimeout(() => {
+          if (!this.showDrawer) {
+            this.sidebarGestureEnabled = true;
+          }
+        }, 350);
+      }
       if (!isShown) {
         try {
           this.getUIContext().getFocusController().clearFocus();
