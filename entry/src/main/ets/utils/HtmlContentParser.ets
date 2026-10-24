@@ -11,7 +11,20 @@ export enum ContentBlockKind {
   LINK_EMBED = 9,
   PAGE_BREAK = 10,
   COLLAPSIBLE = 11,
-  FOOTNOTES = 12
+  FOOTNOTES = 12,
+  RAW = 13
+}
+
+export class SourceSpan {
+  format: string;
+  start: number;
+  end: number;
+
+  constructor(format: string, start: number, end: number) {
+    this.format = format;
+    this.start = start;
+    this.end = end;
+  }
 }
 
 export class InlineSegment {
@@ -40,11 +53,26 @@ export class ImageData {
   src: string;
   alt: string;
   widthPercent: number;
+  title: string = '';
+  width: number = 0;
+  height: number = 0;
+  href: string = '';
+  figureCaption: string = '';
+  attrs: Map<string, string> = new Map();
+  raw: string = '';
 
-  constructor(src: string, alt: string = '', widthPercent: number = 0) {
+  constructor(src: string, alt: string = '', widthPercent: number = 0,
+    title: string = '', width: number = 0, height: number = 0,
+    href: string = '', figureCaption: string = '', raw: string = '') {
     this.src = src;
     this.alt = alt;
     this.widthPercent = widthPercent;
+    this.title = title;
+    this.width = width;
+    this.height = height;
+    this.href = href;
+    this.figureCaption = figureCaption;
+    this.raw = raw;
   }
 }
 
@@ -56,10 +84,15 @@ export class TableCell {
   rowspan: number;
   continuation: boolean;
   placeholder: boolean;
+  blocks: ContentBlock[] = [];
+  align: string = '';
+  attrs: Map<string, string> = new Map();
+  raw: string = '';
 
   constructor(segments: InlineSegment[], header: boolean = false,
     colspan: number = 1, rowspan: number = 1, images: ImageData[] = [],
-    continuation: boolean = false, placeholder: boolean = false) {
+    continuation: boolean = false, placeholder: boolean = false,
+    blocks: ContentBlock[] = [], align: string = '', raw: string = '') {
     this.segments = segments;
     this.images = images;
     this.header = header;
@@ -67,6 +100,9 @@ export class TableCell {
     this.rowspan = rowspan;
     this.continuation = continuation;
     this.placeholder = placeholder;
+    this.blocks = blocks;
+    this.align = align;
+    this.raw = raw;
   }
 
   text(): string {
@@ -86,9 +122,22 @@ export class TableRow {
 
 export class TableData {
   rows: TableRow[];
+  raw: string = '';
+  caption: string = '';
+  columnWidths: number[] = [];
+  headerRowCount: number = 0;
+  footerRowCount: number = 0;
+  attrs: Map<string, string> = new Map();
 
-  constructor(rows: TableRow[]) {
+  constructor(rows: TableRow[], raw: string = '', caption: string = '',
+    columnWidths: number[] = [], headerRowCount: number = 0,
+    footerRowCount: number = 0) {
     this.rows = rows;
+    this.raw = raw;
+    this.caption = caption;
+    this.columnWidths = columnWidths;
+    this.headerRowCount = headerRowCount;
+    this.footerRowCount = footerRowCount;
   }
 }
 
@@ -171,6 +220,12 @@ export class ContentBlock {
   linkEmbed: LinkEmbedData | null = null;
   collapsible: CollapsibleData | null = null;
   footnotes: FootnoteItem[] = [];
+  id: string = '';
+  raw: string = '';
+  source: SourceSpan | null = null;
+  dirty: boolean = false;
+  attrs: Map<string, string> = new Map();
+  children: ContentBlock[] = [];
 
   constructor(kind: ContentBlockKind, text: string = '', level: number = 0,
     codeLines: string[] = [], language: string = '', segments: InlineSegment[] = [],
@@ -178,7 +233,8 @@ export class ContentBlock {
     image: ImageData | null = null, listMarkers: string[] = [],
     callout: CalloutData | null = null, include: IncludeNoteData | null = null,
     listLevels: number[] = [], indent: number = 0,
-    quoteBlocks: ContentBlock[] = []) {
+    quoteBlocks: ContentBlock[] = [], id: string = '', raw: string = '',
+    source: SourceSpan | null = null) {
     this.kind = kind;
     this.text = text;
     this.level = level;
@@ -194,6 +250,9 @@ export class ContentBlock {
     this.listLevels = listLevels;
     this.indent = indent;
     this.quoteBlocks = quoteBlocks;
+    this.id = id;
+    this.raw = raw;
+    this.source = source;
   }
 }
 
