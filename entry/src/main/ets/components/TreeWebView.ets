@@ -3,9 +3,14 @@ import { StateKeys } from '../constants/StateKeys';
 
 class TreeBridge {
   onSelect: (noteId: string) => void = () => {};
+  onToggle: (noteId: string) => void = () => {};
 
   onNoteSelected(noteId: string): void {
     this.onSelect(noteId);
+  }
+
+  toggleNote(noteId: string): void {
+    this.onToggle(noteId);
   }
 }
 
@@ -14,6 +19,7 @@ export struct TreeWebView {
   @Prop @Watch('onTreeChanged') treeJson: string = '[]';
   @Prop @Watch('onActiveChanged') activeNoteId: string = '';
   onSelect: (noteId: string) => void = () => {};
+  onToggle: (noteId: string) => void = () => {};
   @StorageLink(StateKeys.THEME_MODE) private themeMode: string = 'light';
   @State private ready: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
@@ -22,6 +28,9 @@ export struct TreeWebView {
   aboutToAppear(): void {
     this.bridge.onSelect = (noteId: string) => {
       this.onSelect(noteId);
+    };
+    this.bridge.onToggle = (noteId: string) => {
+      this.onToggle(noteId);
     };
   }
 
@@ -89,7 +98,7 @@ export struct TreeWebView {
         .javaScriptProxy({
           object: this.bridge,
           name: 'NativeTreeBridge',
-          methodList: ['onNoteSelected'],
+          methodList: ['onNoteSelected', 'toggleNote'],
           controller: this.controller
         })
         .onPageEnd(() => {

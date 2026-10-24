@@ -77,9 +77,17 @@
         }
         host.innerHTML = rows.map(row).join('');
         Array.prototype.forEach.call(host.querySelectorAll('.row'), function (el) {
+          var id = decodeURIComponent(el.getAttribute('data-id') || '');
           el.addEventListener('click', function () {
-            bridge('onNoteSelected', decodeURIComponent(el.getAttribute('data-id') || ''));
+            bridge('onNoteSelected', id);
           });
+          var chevron = el.querySelector('.chev');
+          if (chevron) {
+            chevron.addEventListener('click', function (event) {
+              event.stopPropagation();
+              bridge('toggleNote', id);
+            });
+          }
         });
       }
       window.renderTree = function (json) {

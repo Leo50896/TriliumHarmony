@@ -1012,6 +1012,15 @@ export struct SideDrawer {
                       return;
                     }
                   }
+                },
+                onToggle: (noteId: string) => {
+                  for (let i = 0; i < this.tree.length; i++) {
+                    const item: DrawerTreeNode = this.tree[i];
+                    if (item.noteId === noteId) {
+                      this.toggleNode(item);
+                      return;
+                    }
+                  }
                 }
               })
               .width('100%')
