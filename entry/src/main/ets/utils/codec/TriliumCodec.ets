@@ -138,9 +138,27 @@ export class TriliumCodec {
         return TriliumCodec.serializeHtmlTable(block);
       case ContentBlockKind.IMAGE:
         return TriliumCodec.serializeHtmlImage(block);
+      case ContentBlockKind.CALLOUT:
+        return TriliumCodec.serializeHtmlCallout(block);
       default:
         return block.raw.length > 0 ? block.raw : block.text;
     }
+  }
+
+  private static serializeHtmlCallout(block: ContentBlock): string {
+    if (block.callout === null) {
+      return block.raw;
+    }
+    const callout = block.callout;
+    let content: string = '';
+    for (let i = 0; i < callout.blocks.length; i++) {
+      content += TriliumCodec.serializeBlock(callout.blocks[i], 'html');
+    }
+    const title: string = callout.title.length > 0 ?
+      `<div class="admonition-title">${TriliumCodec.escapeHtml(callout.title)}</div>` : '';
+    return `<aside class="admonition ${TriliumCodec.escapeHtml(callout.type)}" ` +
+      `data-callout-type="${TriliumCodec.escapeHtml(callout.type)}">` +
+      `${title}<div class="callout-content">${content}</div></aside>`;
   }
 
   private static serializeHtmlTable(block: ContentBlock): string {

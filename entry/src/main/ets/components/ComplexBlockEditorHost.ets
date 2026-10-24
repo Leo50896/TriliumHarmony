@@ -1,6 +1,7 @@
 import {
   ContentBlock,
   ContentBlockKind,
+  CalloutData,
   ImageData,
   InlineSegment,
   TableCell,
@@ -68,10 +69,19 @@ export struct ComplexBlockEditorHost {
   @State private widthPx: number = 0;
   @State private heightPx: number = 0;
   @State private tableRows: EditableRow[] = [];
+  @State private calloutType: string = 'note';
+  @State private calloutTitle: string = '';
+  @State private calloutChildren: ContentBlock[] = [];
+  @State private calloutChildTick: number = 0;
 
   aboutToAppear(): void {
     this.rawHtml = this.block.raw;
-    this.rawMode = this.block.kind === ContentBlockKind.CALLOUT;
+    this.rawMode = false;
+    if (this.block.callout !== null) {
+      this.calloutType = this.block.callout.type;
+      this.calloutTitle = this.block.callout.title;
+      this.calloutChildren = this.block.callout.blocks.slice();
+    }
     if (this.block.table !== null) {
       for (let r = 0; r < this.block.table.rows.length; r++) {
         const row: TableRow = this.block.table.rows[r];
@@ -243,14 +253,198 @@ export struct ComplexBlockEditorHost {
     this.onSave(next);
   }
 
+  private calloutAccent(type: string): string {
+    if (type === 'warning') {
+      return '#d99a2b';
+    }
+    if (type === 'success') {
+      return '#3fa66a';
+    }
+    if (type === 'danger' || type === 'error') {
+      return '#d9534f';
+    }
+    return '#4a90e2';
+  }
+
+  private addCalloutParagraph(): void {
+    const block: ContentBlock = new ContentBlock(ContentBlockKind.PARAGRAPH, '', 0, [], '',
+      [new InlineSegment('')]);
+    block.dirty = true;
+    this.calloutChildren.push(block);
+    this.calloutChildren = this.calloutChildren.slice();
+    this.calloutChildTick++;
+  }
+
+  private childText(block: ContentBlock): string {
+    let text: string = '';
+    for (let i = 0; i < block.segments.length; i++) {
+      text += block.segments[i].text;
+    }
+    return text;
+  }
+
+  private updateCalloutParagraph(block: ContentBlock, value: string): void {
+    block.text = value;
+    block.segments = [new InlineSegment(value)];
+    block.dirty = true;
+  }
+
+  private listText(block: ContentBlock): string {
+    const lines: string[] = [];
+    for (let i = 0; i < block.listItems.length; i++) {
+      let line: string = '';
+      const segments: InlineSegment[] = block.listItems[i];
+      for (let s = 0; s < segments.length; s++) {
+        line += segments[s].text;
+      }
+      lines.push(line);
+    }
+    return lines.join('\n');
+  }
+
+  private updateCalloutList(block: ContentBlock, value: string): void {
+    const lines: string[] = value.split('\n');
+    const items: InlineSegment[][] = [];
+    const markers: string[] = [];
+    const levels: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line: string = lines[i].replace(/^\s*(?:[-*+]|\d+\.)\s*/, '');
+      items.push([new InlineSegment(line)]);
+      markers.push('•');
+      levels.push(0);
+    }
+    block.listItems = items;
+    block.listMarkers = markers;
+    block.listLevels = levels;
+    block.dirty = true;
+  }
+
+  private saveCallout(): void {
+    if (this.block.callout === null) {
+      return;
+    }
+    const old: CalloutData = this.block.callout;
+    const children: ContentBlock[] = this.calloutChildren.slice();
+    const callout: CalloutData = new CalloutData(this.calloutType,
+      old.icon, this.calloutAccent(this.calloutType), children, this.calloutTitle.trim());
+    const next: ContentBlock = new ContentBlock(this.block.kind, this.block.text,
+      this.block.level, this.block.codeLines, this.block.language, this.block.segments,
+      this.block.listItems, this.block.table, this.block.image, this.block.listMarkers,
+      callout, this.block.include, this.block.listLevels, this.block.indent,
+      this.block.quoteBlocks, this.block.id, this.block.raw, this.block.source);
+    next.attrs = this.block.attrs;
+    next.children = children;
+    next.dirty = true;
+    next.serializeMode = 'model';
+    this.onSave(next);
+  }
+
   private save(): void {
-    if (this.rawMode || this.block.kind === ContentBlockKind.CALLOUT) {
+    if (this.rawMode) {
       this.saveRaw();
     } else if (this.block.kind === ContentBlockKind.TABLE) {
       this.saveTable();
+    } else if (this.block.kind === ContentBlockKind.CALLOUT) {
+      this.saveCallout();
     } else {
       this.saveImage();
     }
+  }
+
+  @Builder
+  private CalloutPanel() {
+    Column({ space: 10 }) {
+      Text('类型')
+        .fontSize(12)
+        .fontColor($r('app.color.text_secondary'))
+      Row({ space: 6 }) {
+        ForEach(['note', 'info', 'warning', 'success', 'danger'],
+          (type: string, index: number) => {
+            Text(type === 'note' ? 'Note' : type === 'info' ? 'Info' :
+              type === 'warning' ? 'Warning' : type === 'success' ? 'Success' : 'Danger')
+              .fontSize(11)
+              .fontColor(this.calloutType === type ? $r('app.color.primary') :
+                $r('app.color.text_secondary'))
+              .padding({ left: 9, right: 9, top: 5, bottom: 5 })
+              .borderRadius(6)
+              .backgroundColor(this.calloutType === type ? $r('app.color.primary_soft') :
+                $r('app.color.bg_secondary'))
+              .onClick(() => {
+                this.calloutType = type;
+              })
+          }, (type: string, index: number) => `callout-type-${type}`)
+      }
+      .width('100%')
+
+      TextInput({ text: this.calloutTitle, placeholder: 'Callout 标题' })
+        .width('100%')
+        .height(38)
+        .fontSize(13)
+        .onChange((value: string) => {
+          this.calloutTitle = value;
+        })
+
+      Scroll() {
+        Column({ space: 8 }) {
+          ForEach(this.calloutChildren, (child: ContentBlock, index: number) => {
+            if (child.kind === ContentBlockKind.PARAGRAPH) {
+              TextInput({ text: this.childText(child), placeholder: '段落内容' })
+                .width('100%')
+                .constraintSize({ minHeight: 36, maxHeight: 120 })
+                .fontSize(13)
+                .onChange((value: string) => {
+                  this.updateCalloutParagraph(child, value);
+                })
+            } else if (child.kind === ContentBlockKind.LIST) {
+              TextArea({ text: this.listText(child), placeholder: '每行一个列表项' })
+                .width('100%')
+                .constraintSize({ minHeight: 70, maxHeight: 180 })
+                .fontSize(13)
+                .backgroundColor($r('app.color.bg_secondary'))
+                .borderRadius(6)
+                .onChange((value: string) => {
+                  this.updateCalloutList(child, value);
+                })
+            } else {
+              Text('[复杂块暂不支持嵌套编辑]')
+                .width('100%')
+                .fontSize(12)
+                .fontColor($r('app.color.text_tertiary'))
+                .padding(10)
+                .backgroundColor($r('app.color.bg_secondary'))
+                .borderRadius(6)
+            }
+          }, (child: ContentBlock, index: number) =>
+            `${index}-${child.kind}-${this.calloutChildTick}`)
+        }
+        .width('100%')
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+
+      Row({ space: 10 }) {
+        Text('+ 添加段落')
+          .fontSize(12)
+          .fontColor($r('app.color.primary'))
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .borderRadius(6)
+          .backgroundColor($r('app.color.primary_soft'))
+          .onClick(() => {
+            this.addCalloutParagraph();
+          })
+        Blank()
+        Text('高级：原始 HTML')
+          .fontSize(12)
+          .fontColor($r('app.color.text_tertiary'))
+          .onClick(() => {
+            this.rawMode = true;
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -493,11 +687,15 @@ export struct ComplexBlockEditorHost {
           })
       } else if (this.block.kind === ContentBlockKind.TABLE && !this.rawMode) {
         this.TablePanel()
+      } else if (this.block.kind === ContentBlockKind.CALLOUT && !this.rawMode) {
+        this.CalloutPanel()
       } else {
         this.RawPanel()
         if (this.block.kind === ContentBlockKind.IMAGE ||
-          this.block.kind === ContentBlockKind.TABLE) {
-          Text(this.block.kind === ContentBlockKind.TABLE ? '返回表格编辑' : '返回属性面板')
+          this.block.kind === ContentBlockKind.TABLE ||
+          this.block.kind === ContentBlockKind.CALLOUT) {
+          Text(this.block.kind === ContentBlockKind.TABLE ? '返回表格编辑' :
+            (this.block.kind === ContentBlockKind.CALLOUT ? '返回 Callout 编辑' : '返回属性面板'))
             .fontSize(12)
             .fontColor($r('app.color.text_tertiary'))
             .padding({ top: 8, bottom: 8 })

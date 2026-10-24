@@ -146,12 +146,17 @@ export class CalloutData {
   icon: string;
   accentColor: string;
   blocks: ContentBlock[];
+  title: string;
+  children: ContentBlock[];
 
-  constructor(type: string, icon: string, accentColor: string, blocks: ContentBlock[]) {
+  constructor(type: string, icon: string, accentColor: string, blocks: ContentBlock[],
+    title: string = '') {
     this.type = type;
     this.icon = icon;
     this.accentColor = accentColor;
     this.blocks = blocks;
+    this.title = title;
+    this.children = blocks;
   }
 }
 
@@ -421,6 +426,31 @@ export class HtmlContentParser {
         return `\n\n@@CODE_BLOCK_${codeBlocks.length - 1}@@\n\n`;
       });
 
+    html = html.replace(
+      /<div([^>]*)class\s*=\s*["'][^"']*\bcallout\b[^"']*["']([^>]*)>([\s\S]*?)<\/div>\s*<\/div>/gi,
+      (match: string, before: string, after: string, body: string): string => {
+        const attrs: string = before + ' ' + after;
+        const typeMatch: RegExpMatchArray | null =
+          attrs.match(/data-callout-type\s*=\s*["']([^"']+)["']/i);
+        const type: string = typeMatch !== null ? typeMatch[1].toLowerCase() : 'note';
+        let title: string = '';
+        let contentBody: string = body;
+        const titleMatch: RegExpMatchArray | null = body.match(
+          /<div[^>]*class\s*=\s*["'][^"']*callout-title[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+        if (titleMatch !== null) {
+          title = HtmlContentParser.decodeEntities(
+            HtmlContentParser.stripAllTags(titleMatch[1])).trim();
+          contentBody = contentBody.replace(titleMatch[0], '');
+        }
+        contentBody = contentBody.replace(
+          /<div[^>]*class\s*=\s*["'][^"']*callout-content[^"']*["'][^>]*>/gi, '');
+        contentBody = contentBody.replace(/<\/div>\s*$/i, '');
+        const blocks: ContentBlock[] = HtmlContentParser.parse(contentBody, 'text', 'text/html');
+        callouts.push(new CalloutData(type, HtmlContentParser.calloutIcon(type),
+          HtmlContentParser.calloutAccent(type), blocks, title));
+        return `\n\n@@CALLOUT_${callouts.length - 1}@@\n\n`;
+      });
+
     html = html.replace(/<aside[^>]*>([\s\S]*?)<\/aside>/gi,
       (match: string, body: string): string => {
         const classMatch: RegExpMatchArray | null =
@@ -430,10 +460,22 @@ export class HtmlContentParser {
           return match;
         }
         const typeMatch: RegExpMatchArray | null = className.match(/admonition\s+([a-zA-Z-]+)/i);
-        const type: string = typeMatch !== null ? typeMatch[1].toLowerCase() : 'note';
-        const blocks: ContentBlock[] = HtmlContentParser.parse(body, 'text', 'text/html');
+        const dataTypeMatch: RegExpMatchArray | null =
+          match.match(/data-callout-type\s*=\s*["']([^"']+)["']/i);
+        const type: string = dataTypeMatch !== null ? dataTypeMatch[1].toLowerCase() :
+          (typeMatch !== null ? typeMatch[1].toLowerCase() : 'note');
+        let title: string = '';
+        const titleMatch: RegExpMatchArray | null = body.match(
+          /<(?:div|p)[^>]*class\s*=\s*["'][^"']*(?:admonition-title|callout-title)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|p)>/i);
+        let contentBody: string = body;
+        if (titleMatch !== null) {
+          title = HtmlContentParser.decodeEntities(
+            HtmlContentParser.stripAllTags(titleMatch[1])).trim();
+          contentBody = body.replace(titleMatch[0], '');
+        }
+        const blocks: ContentBlock[] = HtmlContentParser.parse(contentBody, 'text', 'text/html');
         callouts.push(new CalloutData(type, HtmlContentParser.calloutIcon(type),
-          HtmlContentParser.calloutAccent(type), blocks));
+          HtmlContentParser.calloutAccent(type), blocks, title));
         return `\n\n@@CALLOUT_${callouts.length - 1}@@\n\n`;
       });
 
