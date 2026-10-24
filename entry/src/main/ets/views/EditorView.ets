@@ -19,6 +19,8 @@ import { NativeSheetView } from '../components/NativeSheetView';
 import { PdfViewer } from '../components/PdfViewer';
 import { TriliumCallout } from '../components/TriliumCallout';
 import { BlockRichEditor } from '../components/BlockRichEditor';
+import { BlockTarget } from '../components/BlockTarget';
+import { BlockEditMode, BlockRendererRegistry, BlockRendererSpec } from '../components/BlockRenderer';
 import { AuthSession } from '../models/AuthModels';
 import { CachedNote } from '../models/CacheModels';
 import {
@@ -189,7 +191,7 @@ export struct EditorView {
   @State private editorViewportHeight: number = 0;
   @State private fullViewportHeight: number = 0;
   @State private keyboardInset: number = 0;
-  @State private editingBlockId: string = '';
+  @State private editingTarget: BlockTarget | null = null;
   @State private blockCommitTick: number = 0;
   @State private readingProgress: number = 0;
   @State private readingContentHeight: number = 0;
@@ -203,7 +205,7 @@ export struct EditorView {
   private scroller: Scroller = new Scroller();
   private richController: RichEditorController = new RichEditorController();
   private richLoaded: boolean = false;
-  private pendingBlockEditId: string = '';
+  private pendingBlockEditTarget: BlockTarget | null = null;
 
   private onEditingStateChanged(): void {
     AppStorage.setOrCreate(StateKeys.EDITOR_EDITING, this.isEditing || this.isRichEditing);
@@ -231,7 +233,7 @@ export struct EditorView {
     window.getLastWindow(context).then((mainWindow: window.Window) => {
       mainWindow.on('keyboardHeightChange', (height: number) => {
         this.keyboardInset = height > 0 ? px2vp(height) : 0;
-        if (height === 0 && this.editingBlockId.length > 0) {
+        if (height === 0 && this.editingTarget !== null) {
           this.blockCommitTick++;
         }
         this.recomputeToolbarY();
@@ -455,7 +457,7 @@ export struct EditorView {
     this.isLoading = true;
     this.isEditing = false;
     this.isRichEditing = false;
-    this.editingBlockId = '';
+    this.editingTarget = null;
     this.richLoaded = false;
     this.richController = new RichEditorController();
     try {
@@ -1024,38 +1026,60 @@ export struct EditorView {
     return true;
   }
 
+  private blockForTarget(target: BlockTarget): ContentBlock | null {
+    for (let i = 0; i < this.blocks.length; i++) {
+      if (this.blocks[i].id === target.blockId) {
+        return this.blocks[i];
+      }
+    }
+    return null;
+  }
+
+  private isEditingBlock(block: ContentBlock): boolean {
+    if (this.editingTarget === null) {
+      return false;
+    }
+    return this.editingTarget.isSame(BlockTarget.forBlock(block.id, block.kind));
+  }
+
   private canBlockEdit(block: ContentBlock): boolean {
     if (this.note === null || this.note.type !== 'text' || this.markdownPreview ||
       this.isEditing || this.isRichEditing || this.isSaving || this.isSpreadsheet || this.isPdf) {
       return false;
     }
-    return block.id.length > 0 &&
-      (block.kind === ContentBlockKind.PARAGRAPH || block.kind === ContentBlockKind.HEADING);
+    const spec: BlockRendererSpec = BlockRendererRegistry.resolve(block);
+    return block.id.length > 0 && spec.mode === BlockEditMode.INLINE && spec.inlineEditable;
   }
 
   private requestBlockEdit(block: ContentBlock): void {
-    if (!this.canBlockEdit(block) || this.editingBlockId === block.id) {
+    this.handleRequestEdit(BlockTarget.forBlock(block.id, block.kind));
+  }
+
+  private handleRequestEdit(target: BlockTarget): void {
+    const block: ContentBlock | null = this.blockForTarget(target);
+    if (block === null || !this.canBlockEdit(block) ||
+      (this.editingTarget !== null && this.editingTarget.isSame(target))) {
       return;
     }
-    if (this.editingBlockId.length > 0) {
-      this.pendingBlockEditId = block.id;
+    if (this.editingTarget !== null) {
+      this.pendingBlockEditTarget = target;
       this.getUIContext().getFocusController().clearFocus();
       setTimeout(() => {
-        if (this.editingBlockId.length === 0) {
-          this.beginBlockEdit(this.pendingBlockEditId);
+        if (this.editingTarget === null && this.pendingBlockEditTarget !== null) {
+          this.beginBlockEdit(this.pendingBlockEditTarget);
         }
       }, 180);
       return;
     }
-    this.beginBlockEdit(block.id);
+    this.beginBlockEdit(target);
   }
 
-  private beginBlockEdit(blockId: string): void {
-    if (blockId.length === 0) {
+  private beginBlockEdit(target: BlockTarget): void {
+    if (target.blockId.length === 0) {
       return;
     }
-    this.pendingBlockEditId = '';
-    this.editingBlockId = blockId;
+    this.pendingBlockEditTarget = null;
+    this.editingTarget = target;
   }
 
   private blockText(block: ContentBlock): string {
@@ -1076,14 +1100,14 @@ export struct EditorView {
     return value;
   }
 
-  private commitBlockEdit(blockId: string, segments: InlineSegment[], text: string): void {
-    if (this.editingBlockId !== blockId) {
+  private commitBlockEdit(target: BlockTarget, segments: InlineSegment[], text: string): void {
+    if (this.editingTarget === null || !this.editingTarget.isSame(target)) {
       return;
     }
-    this.editingBlockId = '';
+    this.editingTarget = null;
     let block: ContentBlock | null = null;
     for (let i = 0; i < this.blocks.length; i++) {
-      if (this.blocks[i].id === blockId) {
+      if (this.blocks[i].id === target.blockId) {
         block = this.blocks[i];
         break;
       }
@@ -1104,7 +1128,7 @@ export struct EditorView {
     replacement.children = block.children;
     replacement.dirty = true;
     try {
-      this.blocks = TriliumCodec.replaceBlock(this.blocks, blockId, replacement);
+      this.blocks = TriliumCodec.replaceBlock(this.blocks, target.blockId, replacement);
       const nextRaw: string = TriliumCodec.serializeToRaw(this.blocks, 'html');
       this.rawContent = nextRaw;
       this.editContent = nextRaw;
@@ -1970,7 +1994,7 @@ export struct EditorView {
   private ContentBlockView(block: ContentBlock) {
     if (block.kind === ContentBlockKind.HEADING) {
       Column() {
-        if (this.editingBlockId === block.id) {
+        if (this.isEditingBlock(block)) {
           BlockRichEditor({
             segments: block.segments,
             fontSize: this.readerSize(block.level === 1 ? 27 : (block.level === 2 ? 23 : 20)),
@@ -1978,7 +2002,7 @@ export struct EditorView {
             heading: true,
             commitTick: this.blockCommitTick,
             onCommit: (segments: InlineSegment[], text: string) => {
-              this.commitBlockEdit(block.id, segments, text);
+              this.commitBlockEdit(BlockTarget.forBlock(block.id, block.kind), segments, text);
             }
           })
         } else {
@@ -2253,7 +2277,7 @@ export struct EditorView {
       }
     } else {
       Column() {
-        if (this.editingBlockId === block.id) {
+        if (this.isEditingBlock(block)) {
           BlockRichEditor({
             segments: block.segments,
             fontSize: this.readerSize(17),
@@ -2261,7 +2285,7 @@ export struct EditorView {
             heading: false,
             commitTick: this.blockCommitTick,
             onCommit: (segments: InlineSegment[], text: string) => {
-              this.commitBlockEdit(block.id, segments, text);
+              this.commitBlockEdit(BlockTarget.forBlock(block.id, block.kind), segments, text);
             }
           })
         } else {
@@ -3540,7 +3564,7 @@ export struct EditorView {
                   .width('100%')
                 }
                 this.ChildNotesSection()
-                if (this.editingBlockId.length > 0) {
+                if (this.editingTarget !== null) {
                   Column()
                     .width('100%')
                     .height(140)
