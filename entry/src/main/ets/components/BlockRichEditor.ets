@@ -369,7 +369,8 @@ export struct BlockRichEditor {
     const style: RichEditorTextStyle = {
       fontColor: segment.href.length > 0 ? '#4a90e2' : $r('app.color.text_primary'),
       fontSize: this.fontSize,
-      fontWeight: this.heading || segment.bold ? FontWeight.Medium : FontWeight.Normal,
+      fontWeight: segment.bold ? FontWeight.Bold :
+        (this.heading ? FontWeight.Medium : FontWeight.Normal),
       fontStyle: segment.italic ? FontStyle.Italic : FontStyle.Normal
     };
     if (segment.code) {
